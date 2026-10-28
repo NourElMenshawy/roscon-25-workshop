@@ -1,0 +1,20 @@
+repositories:
+  third_party/PX4-Autopilot:
+    type: git
+    url: https://github.com/NourElMenshawy/PX4-Autopilot.git
+    version: 9b85eec8c25b8ad364b39b239d380785e196f1f2
+
+  third_party/px4_msgs:
+    type: git
+    url: https://github.com/PX4/px4_msgs.git
+    version: 0be57f29b494be6f8a81cf428a1c50fad203ca6a
+
+  third_party/px4-ros2-interface-lib:
+    type: git
+    url: https://github.com/Auterion/px4-ros2-interface-lib.git
+    version: c3e410f035806e8c56246708432ded09c976434b
+
+  third_party/stdexec:
+    type: git
+    url: https://github.com/NVIDIA/stdexec.git
+    version: 792e1342f8c983e205d899f840038d6d57fc9bd1
