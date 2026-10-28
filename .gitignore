@@ -2,5 +2,6 @@ build/
 install/
 log/
 .vscode/
+.cache/
 .ros2-workspace
 compile_commands.json

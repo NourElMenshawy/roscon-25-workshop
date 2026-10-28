@@ -3,12 +3,12 @@
 <package format="3">
   <name>px4_tf</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>"ROS 2 publisher for PX4 vehicle odometry transforms and multi-vehicle TF frame integration."</description>
   <maintainer email="beniamino.pozzan@gmail.com">Beniamino Pozzan</maintainer>
   <license>CC-BY-SA-4.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-
+  <buildtool_depend>ament_cmake_target_dependencies</buildtool_depend>
   <depend>rclcpp</depend>
   <depend>px4_msgs</depend>
   <depend>tf2</depend>

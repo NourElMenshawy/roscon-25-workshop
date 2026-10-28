@@ -1,20 +1,20 @@
 #include "px4_tf/px4_tf_publisher_node.hpp"
 
-#include "tf2/LinearMath/Quaternion.h"
-
-Px4TfPublisherNode::Px4TfPublisherNode() : Node("px4_tf_publisher")
-{
+#include "tf2/LinearMath/Quaternion.hpp"
+Px4TfPublisherNode::Px4TfPublisherNode() : Node("px4_tf_publisher") {
   px4_tf_prefix_ = this->declare_parameter<std::string>("px4_tf_prefix", "");
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
-  tf_static_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
+  tf_static_broadcaster_ =
+      std::make_unique<tf2_ros::StaticTransformBroadcaster>(*this);
   this->make_static_transforms();
   odom_sub_ = this->create_subscription<px4_msgs::msg::VehicleOdometry>(
       "fmu/out/vehicle_odometry", rclcpp::SensorDataQoS(),
-      [this](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) { this->handle_odometry(msg); });
+      [this](const px4_msgs::msg::VehicleOdometry::SharedPtr msg) {
+        this->handle_odometry(msg);
+      });
 }
 
-void Px4TfPublisherNode::make_static_transforms()
-{
+void Px4TfPublisherNode::make_static_transforms() {
   std::vector<geometry_msgs::msg::TransformStamped> static_transforms;
   geometry_msgs::msg::TransformStamped t;
 
@@ -46,8 +46,8 @@ void Px4TfPublisherNode::make_static_transforms()
   tf_static_broadcaster_->sendTransform(static_transforms);
 }
 
-void Px4TfPublisherNode::handle_odometry(const px4_msgs::msg::VehicleOdometry::SharedPtr& msg)
-{
+void Px4TfPublisherNode::handle_odometry(
+    const px4_msgs::msg::VehicleOdometry::SharedPtr &msg) {
   geometry_msgs::msg::TransformStamped t;
   t.header.stamp = this->get_clock()->now();
   t.header.frame_id = px4_tf_prefix_ + "odom_ned";
