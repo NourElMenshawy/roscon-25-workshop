@@ -3,23 +3,24 @@
 <package format="3">
   <name>aruco_tracker</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>ROS 2 ArUco marker detection and pose estimation for PX4 precision-landing applications.</description>
   <maintainer email="nour.el.menshawy@gmail.com">NourElMenshawy</maintainer>
   <license>Apache-2.0</license>
 
-  <buildtool_depend>ament_cmake</buildtool_depend>
-
-  <depend>px4_msgs</depend>
+  <depend>rclcpp</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
-  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
   <depend>cv_bridge</depend>
   <depend>tf2</depend>
   <depend>libopencv-dev</depend>
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>ros_gz_image</exec_depend>
   <exec_depend>ros_gz_bridge</exec_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>
