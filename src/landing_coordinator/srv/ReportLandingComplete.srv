@@ -1,0 +1,13 @@
+# Only the active owner may report success for the current mission.
+uint64 mission_id
+string drone_id
+# Only success=true can transition a RESERVED mission to COMPLETED.
+bool success
+---
+# True for a newly completed mission or an idempotent duplicate report.
+bool accepted
+# Whether the authoritative mission is now COMPLETED.
+bool completed
+# completed, already_completed, wrong_mission_id, not_owner,
+# no_active_mission, invalid_drone_id, unsuccessful_result.
+string reason

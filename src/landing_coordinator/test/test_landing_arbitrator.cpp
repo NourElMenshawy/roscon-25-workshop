@@ -1,15 +1,16 @@
-#include "landing_coordinator/landing_arbitrator.hpp"
-
 #include <gtest/gtest.h>
 
 #include <future>
 #include <string>
 #include <vector>
 
+#include "landing_coordinator/landing_arbitrator.hpp"
+
 using landing_coordinator::LandingArbitrator;
 using landing_coordinator::LandingDecision;
 
-TEST(LandingArbitratorTest, FirstRequestWins) {
+TEST(LandingArbitratorTest, FirstRequestWins)
+{
   LandingArbitrator arbitrator;
   const auto result = arbitrator.requestLanding("drone_a");
   EXPECT_TRUE(result.granted);
@@ -18,7 +19,8 @@ TEST(LandingArbitratorTest, FirstRequestWins) {
   EXPECT_EQ(result.reason, "granted");
 }
 
-TEST(LandingArbitratorTest, DifferentDroneCannotTakeOwnership) {
+TEST(LandingArbitratorTest, DifferentDroneCannotTakeOwnership)
+{
   LandingArbitrator arbitrator;
   const auto first = arbitrator.requestLanding("drone_a");
   const auto second = arbitrator.requestLanding("drone_b");
@@ -29,7 +31,8 @@ TEST(LandingArbitratorTest, DifferentDroneCannotTakeOwnership) {
   EXPECT_EQ(second.reason, "reserved_by_other");
 }
 
-TEST(LandingArbitratorTest, RetryByOwnerIsIdempotent) {
+TEST(LandingArbitratorTest, RetryByOwnerIsIdempotent)
+{
   LandingArbitrator arbitrator;
   const auto first = arbitrator.requestLanding("drone_b");
   const auto retry = arbitrator.requestLanding("drone_b");
@@ -39,7 +42,8 @@ TEST(LandingArbitratorTest, RetryByOwnerIsIdempotent) {
   EXPECT_EQ(retry.owner_id, "drone_b");
 }
 
-TEST(LandingArbitratorTest, BlankIdentityCannotClaimResource) {
+TEST(LandingArbitratorTest, BlankIdentityCannotClaimResource)
+{
   LandingArbitrator arbitrator;
   const auto invalid = arbitrator.requestLanding(" \t\n ");
   EXPECT_FALSE(invalid.granted);
@@ -50,7 +54,8 @@ TEST(LandingArbitratorTest, BlankIdentityCannotClaimResource) {
   EXPECT_TRUE(arbitrator.requestLanding("drone_a").granted);
 }
 
-TEST(LandingArbitratorTest, ConcurrentRequestsHaveExactlyOneWinner) {
+TEST(LandingArbitratorTest, ConcurrentRequestsHaveExactlyOneWinner)
+{
   LandingArbitrator arbitrator;
   constexpr int kCount = 32;
   std::promise<void> start_promise;
@@ -83,4 +88,42 @@ TEST(LandingArbitratorTest, ConcurrentRequestsHaveExactlyOneWinner) {
     EXPECT_EQ(decision.owner_id, chosen_owner);
     EXPECT_EQ(decision.mission_id, 1u);
   }
+}
+
+TEST(LandingArbitratorTest, RejectsCompletionBeforeReservation)
+{
+  LandingArbitrator arbitrator;
+  auto result = arbitrator.reportLandingComplete("drone_a", 1, true);
+  EXPECT_FALSE(result.accepted);
+  EXPECT_EQ(result.reason, "no_active_mission");
+}
+
+TEST(LandingArbitratorTest, ValidatesOwnerMissionAndSuccess)
+{
+  LandingArbitrator arbitrator;
+  ASSERT_TRUE(arbitrator.requestLanding("drone_b").granted);
+  EXPECT_EQ(arbitrator.reportLandingComplete(" ", 1, true).reason, "invalid_drone_id");
+  EXPECT_EQ(arbitrator.reportLandingComplete("drone_b", 9, true).reason, "wrong_mission_id");
+  EXPECT_EQ(arbitrator.reportLandingComplete("drone_a", 1, true).reason, "not_owner");
+  EXPECT_EQ(arbitrator.reportLandingComplete("drone_b", 1, false).reason, "unsuccessful_result");
+  auto completed = arbitrator.reportLandingComplete("drone_b", 1, true);
+  EXPECT_TRUE(completed.accepted);
+  EXPECT_TRUE(completed.completed);
+  EXPECT_TRUE(completed.newly_completed);
+  EXPECT_EQ(completed.reason, "completed");
+}
+
+TEST(LandingArbitratorTest, DuplicateCompletionIsIdempotentAndResourceStaysOccupied)
+{
+  LandingArbitrator arbitrator;
+  ASSERT_TRUE(arbitrator.requestLanding("drone_a").granted);
+  ASSERT_TRUE(arbitrator.reportLandingComplete("drone_a", 1, true).accepted);
+  auto duplicate = arbitrator.reportLandingComplete("drone_a", 1, true);
+  EXPECT_TRUE(duplicate.accepted);
+  EXPECT_TRUE(duplicate.completed);
+  EXPECT_FALSE(duplicate.newly_completed);
+  EXPECT_EQ(duplicate.reason, "already_completed");
+  auto other = arbitrator.requestLanding("drone_b");
+  EXPECT_FALSE(other.granted);
+  EXPECT_EQ(other.owner_id, "drone_a");
 }

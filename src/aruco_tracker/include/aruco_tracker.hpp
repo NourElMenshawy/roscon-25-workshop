@@ -1,26 +1,25 @@
 #pragma once
 
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <string>
-
-#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <rclcpp/node.hpp>
 #include <rclcpp/publisher.hpp>
 #include <rclcpp/subscription.hpp>
 #include <sensor_msgs/msg/camera_info.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <string>
 
 #include "aruco_detector.hpp"
 
 namespace aruco_tracker {
 
 class ArucoTrackerNode final : public rclcpp::Node {
-public:
+ public:
   ArucoTrackerNode();
 
-private:
+ private:
   struct CalibrationState {
     ArucoDetector::CameraCalibration calibration;
     std::string frame_id;
@@ -34,24 +33,21 @@ private:
   std::optional<CalibrationState> calibration_snapshot() const;
 
   [[nodiscard]]
-  geometry_msgs::msg::PoseStamped
-  make_pose_message(const ArucoDetector::MarkerObservation &observation,
-                    const std_msgs::msg::Header &image_header,
-                    const std::string &fallback_frame) const;
+  geometry_msgs::msg::PoseStamped make_pose_message(
+      const ArucoDetector::MarkerObservation& observation,
+      const std_msgs::msg::Header& image_header, const std::string& fallback_frame) const;
 
   std::unique_ptr<ArucoDetector> detector_;
 
   rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr image_subscription_;
 
-  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr
-      camera_info_subscription_;
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_subscription_;
 
-  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr
-      target_pose_publisher_;
+  rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr target_pose_publisher_;
 
   mutable std::mutex calibration_mutex_;
 
   std::optional<CalibrationState> calibration_;
 };
 
-} // namespace aruco_tracker
+}  // namespace aruco_tracker

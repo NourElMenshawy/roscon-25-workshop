@@ -19,11 +19,13 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(Threads REQUIRED)
 
 # ============================================================
-# Landing request service
+# Landing interfaces
 # ============================================================
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestLanding.srv"
+  "srv/ReportLandingComplete.srv"
+  "msg/LandingStatus.msg"
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target
@@ -115,8 +117,6 @@ install(DIRECTORY include/
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
 )
-
-
 
 # ============================================================
 # Testing

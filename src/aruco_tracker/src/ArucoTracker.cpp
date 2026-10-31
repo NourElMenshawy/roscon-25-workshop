@@ -1,28 +1,26 @@
-#include "aruco_tracker.hpp"
-
 #include <cstdlib>
+#include <cv_bridge/cv_bridge.hpp>
 #include <exception>
 #include <memory>
-#include <utility>
-
-#include <cv_bridge/cv_bridge.hpp>
 #include <opencv2/core.hpp>
-
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/image_encodings.hpp>
-
 #include <tf2/LinearMath/Matrix3x3.hpp>
 #include <tf2/LinearMath/Quaternion.hpp>
+#include <utility>
+
+#include "aruco_tracker.hpp"
 
 namespace aruco_tracker {
 
-ArucoTrackerNode::ArucoTrackerNode() : Node{"aruco_tracker"} {
+ArucoTrackerNode::ArucoTrackerNode() : Node{"aruco_tracker"}
+{
   const auto marker_id = declare_parameter<int>("marker_id", 0);
 
   const auto marker_size_m = declare_parameter<double>("marker_size_m", 0.5);
 
-  const auto dictionary_id = declare_parameter<int>(
-      "dictionary_id", static_cast<int>(cv::aruco::DICT_4X4_250));
+  const auto dictionary_id =
+      declare_parameter<int>("dictionary_id", static_cast<int>(cv::aruco::DICT_4X4_250));
 
   if (marker_id < 0) {
     throw std::invalid_argument("marker_id must be >= 0");
@@ -33,11 +31,10 @@ ArucoTrackerNode::ArucoTrackerNode() : Node{"aruco_tracker"} {
   }
 
   detector_ = std::make_unique<ArucoDetector>(
-      marker_id, marker_size_m,
-      static_cast<cv::aruco::PredefinedDictionaryType>(dictionary_id));
+      marker_id, marker_size_m, static_cast<cv::aruco::PredefinedDictionaryType>(dictionary_id));
 
-  target_pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>(
-      "target_pose", rclcpp::QoS{10});
+  target_pose_publisher_ =
+      create_publisher<geometry_msgs::msg::PoseStamped>("target_pose", rclcpp::QoS{10});
 
   camera_info_subscription_ = create_subscription<sensor_msgs::msg::CameraInfo>(
       "camera_info", rclcpp::SensorDataQoS{},
@@ -47,9 +44,7 @@ ArucoTrackerNode::ArucoTrackerNode() : Node{"aruco_tracker"} {
 
   image_subscription_ = create_subscription<sensor_msgs::msg::Image>(
       "camera", rclcpp::SensorDataQoS{},
-      [this](sensor_msgs::msg::Image::ConstSharedPtr msg) {
-        handle_image(std::move(msg));
-      });
+      [this](sensor_msgs::msg::Image::ConstSharedPtr msg) { handle_image(std::move(msg)); });
 
   RCLCPP_INFO(get_logger(),
               "ArUco tracker started: "
@@ -58,8 +53,8 @@ ArucoTrackerNode::ArucoTrackerNode() : Node{"aruco_tracker"} {
               marker_id, marker_size_m, dictionary_id);
 }
 
-void ArucoTrackerNode::handle_camera_info(
-    sensor_msgs::msg::CameraInfo::ConstSharedPtr msg) {
+void ArucoTrackerNode::handle_camera_info(sensor_msgs::msg::CameraInfo::ConstSharedPtr msg)
+{
   //
   // K:
   //
@@ -68,8 +63,9 @@ void ArucoTrackerNode::handle_camera_info(
   // [  0  0  1 ]
   //
   if (msg->k[0] <= 0.0 || msg->k[4] <= 0.0) {
-    RCLCPP_WARN(get_logger(), "Received invalid CameraInfo: "
-                              "fx or fy is <= 0");
+    RCLCPP_WARN(get_logger(),
+                "Received invalid CameraInfo: "
+                "fx or fy is <= 0");
 
     return;
   }
@@ -96,8 +92,8 @@ void ArucoTrackerNode::handle_camera_info(
   }
 }
 
-void ArucoTrackerNode::handle_image(
-    sensor_msgs::msg::Image::ConstSharedPtr msg) {
+void ArucoTrackerNode::handle_image(sensor_msgs::msg::Image::ConstSharedPtr msg)
+{
   const auto calibration = calibration_snapshot();
 
   if (!calibration) {
@@ -112,37 +108,34 @@ void ArucoTrackerNode::handle_image(
 
   try {
     cv_image = cv_bridge::toCvShare(msg, sensor_msgs::image_encodings::BGR8);
-  } catch (const cv_bridge::Exception &exception) {
-    RCLCPP_ERROR(get_logger(), "cv_bridge conversion failed: %s",
-                 exception.what());
+  } catch (const cv_bridge::Exception& exception) {
+    RCLCPP_ERROR(get_logger(), "cv_bridge conversion failed: %s", exception.what());
 
     return;
   }
 
-  const auto observation =
-      detector_->detect(cv_image->image, calibration->calibration);
+  const auto observation = detector_->detect(cv_image->image, calibration->calibration);
 
   if (!observation) {
     return;
   }
 
-  auto pose =
-      make_pose_message(*observation, msg->header, calibration->frame_id);
+  auto pose = make_pose_message(*observation, msg->header, calibration->frame_id);
 
   target_pose_publisher_->publish(std::move(pose));
 }
 
-std::optional<ArucoTrackerNode::CalibrationState>
-ArucoTrackerNode::calibration_snapshot() const {
+std::optional<ArucoTrackerNode::CalibrationState> ArucoTrackerNode::calibration_snapshot() const
+{
   std::scoped_lock lock{calibration_mutex_};
 
   return calibration_;
 }
 
 geometry_msgs::msg::PoseStamped ArucoTrackerNode::make_pose_message(
-    const ArucoDetector::MarkerObservation &observation,
-    const std_msgs::msg::Header &image_header,
-    const std::string &fallback_frame) const {
+    const ArucoDetector::MarkerObservation& observation, const std_msgs::msg::Header& image_header,
+    const std::string& fallback_frame) const
+{
   geometry_msgs::msg::PoseStamped pose;
 
   //
@@ -165,7 +158,7 @@ geometry_msgs::msg::PoseStamped ArucoTrackerNode::make_pose_message(
 
   pose.pose.position.z = observation.translation[2];
 
-  const auto &r = observation.rotation;
+  const auto& r = observation.rotation;
 
   tf2::Matrix3x3 rotation{r(0, 0), r(0, 1), r(0, 2), r(1, 0), r(1, 1),
                           r(1, 2), r(2, 0), r(2, 1), r(2, 2)};
@@ -187,18 +180,18 @@ geometry_msgs::msg::PoseStamped ArucoTrackerNode::make_pose_message(
   return pose;
 }
 
-} // namespace aruco_tracker
+}  // namespace aruco_tracker
 
-int main(int argc, char **argv) {
+int main(int argc, char** argv)
+{
   rclcpp::init(argc, argv);
 
   try {
     auto node = std::make_shared<aruco_tracker::ArucoTrackerNode>();
 
     rclcpp::spin(node);
-  } catch (const std::exception &exception) {
-    RCLCPP_FATAL(rclcpp::get_logger("aruco_tracker"),
-                 "Aruco tracker failed: %s", exception.what());
+  } catch (const std::exception& exception) {
+    RCLCPP_FATAL(rclcpp::get_logger("aruco_tracker"), "Aruco tracker failed: %s", exception.what());
 
     rclcpp::shutdown();
 

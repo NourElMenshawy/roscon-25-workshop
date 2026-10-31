@@ -3,18 +3,17 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <opencv2/aruco.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
 #include <optional>
 #include <stdexcept>
 #include <vector>
 
-#include <opencv2/aruco.hpp>
-#include <opencv2/calib3d.hpp>
-#include <opencv2/core.hpp>
-
 namespace aruco_tracker {
 
 class ArucoDetector {
-public:
+ public:
   struct CameraCalibration {
     cv::Matx33d camera_matrix{};
     std::vector<double> distortion_coefficients{};
@@ -35,10 +34,12 @@ public:
 
   ArucoDetector(const int target_marker_id, const double marker_size_m,
                 const cv::aruco::PredefinedDictionaryType dictionary_type)
-      : target_marker_id_{target_marker_id}, marker_size_m_{marker_size_m},
+      : target_marker_id_{target_marker_id},
+        marker_size_m_{marker_size_m},
         dictionary_{cv::aruco::getPredefinedDictionary(dictionary_type)},
         detector_{dictionary_, make_detector_parameters()},
-        marker_object_points_{make_marker_object_points(marker_size_m)} {
+        marker_object_points_{make_marker_object_points(marker_size_m)}
+  {
     if (target_marker_id < 0) {
       throw std::invalid_argument("target_marker_id must be >= 0");
     }
@@ -49,8 +50,9 @@ public:
   }
 
   [[nodiscard]]
-  std::optional<MarkerObservation>
-  detect(const cv::Mat &image, const CameraCalibration &calibration) const {
+  std::optional<MarkerObservation> detect(const cv::Mat& image,
+                                          const CameraCalibration& calibration) const
+  {
     if (image.empty()) {
       return std::nullopt;
     }
@@ -60,8 +62,7 @@ public:
 
     detector_.detectMarkers(image, marker_corners, marker_ids);
 
-    const auto marker_it =
-        std::find(marker_ids.begin(), marker_ids.end(), target_marker_id_);
+    const auto marker_it = std::find(marker_ids.begin(), marker_ids.end(), target_marker_id_);
 
     if (marker_it == marker_ids.end()) {
       return std::nullopt;
@@ -70,7 +71,7 @@ public:
     const auto marker_index =
         static_cast<std::size_t>(std::distance(marker_ids.begin(), marker_it));
 
-    const auto &image_points = marker_corners.at(marker_index);
+    const auto& image_points = marker_corners.at(marker_index);
 
     if (image_points.size() != 4) {
       return std::nullopt;
@@ -79,10 +80,10 @@ public:
     cv::Vec3d rotation_vector;
     cv::Vec3d translation_vector;
 
-    const bool pose_found = cv::solvePnP(
-        marker_object_points_, image_points, calibration.camera_matrix,
-        calibration.distortion_coefficients, rotation_vector,
-        translation_vector, false, cv::SOLVEPNP_IPPE_SQUARE);
+    const bool pose_found =
+        cv::solvePnP(marker_object_points_, image_points, calibration.camera_matrix,
+                     calibration.distortion_coefficients, rotation_vector, translation_vector,
+                     false, cv::SOLVEPNP_IPPE_SQUARE);
 
     if (!pose_found) {
       return std::nullopt;
@@ -100,8 +101,7 @@ public:
 
     for (int row = 0; row < 3; ++row) {
       for (int column = 0; column < 3; ++column) {
-        observation.rotation(row, column) =
-            rotation_matrix.at<double>(row, column);
+        observation.rotation(row, column) = rotation_matrix.at<double>(row, column);
       }
     }
 
@@ -110,9 +110,10 @@ public:
     return observation;
   }
 
-private:
+ private:
   [[nodiscard]]
-  static cv::aruco::DetectorParameters make_detector_parameters() {
+  static cv::aruco::DetectorParameters make_detector_parameters()
+  {
     cv::aruco::DetectorParameters parameters;
 
     // The marker corners directly influence the PnP pose.
@@ -123,8 +124,8 @@ private:
   }
 
   [[nodiscard]]
-  static std::vector<cv::Point3d>
-  make_marker_object_points(const double marker_size_m) {
+  static std::vector<cv::Point3d> make_marker_object_points(const double marker_size_m)
+  {
     const double half_size = marker_size_m / 2.0;
 
     //
@@ -152,4 +153,4 @@ private:
   std::vector<cv::Point3d> marker_object_points_;
 };
 
-} // namespace aruco_tracker
+}  // namespace aruco_tracker

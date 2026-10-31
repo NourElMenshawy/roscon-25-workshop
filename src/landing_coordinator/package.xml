@@ -2,8 +2,8 @@
 <package format="3">
   <name>landing_coordinator</name>
   <version>0.1.0</version>
-  <description>First-wins exclusive landing arbitration for the PX4/ROS 2 two-drone demo.</description>
-  <maintainer email="nour.el.menshawy@gmail.com">NourElMenshawy</maintainer>
+  <description>Exclusive landing arbitration with authoritative mission status for the PX4/ROS 2 two-drone demo.</description>
+  <maintainer email="maintainer@example.com">Robotics Demo Maintainer</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

@@ -7,7 +7,6 @@ namespace landing_coordinator {
 
 LandingDecision LandingArbitrator::requestLanding(const std::string& drone_id)
 {
-  // Protect the complete read/decide/write transaction, not just assignment.
   std::lock_guard<std::mutex> lock(mutex_);
 
   if (drone_id.find_first_not_of(" \t\n\r") == std::string::npos) {
@@ -24,7 +23,6 @@ LandingDecision LandingArbitrator::requestLanding(const std::string& drone_id)
   }
 
   if (owner_id_ == drone_id) {
-    // Retries must not change ownership or create a second mission.
     return {.granted = true,
             .owner_id = owner_id_,
             .mission_id = mission_id_,
@@ -35,6 +33,38 @@ LandingDecision LandingArbitrator::requestLanding(const std::string& drone_id)
           .owner_id = owner_id_,
           .mission_id = mission_id_,
           .reason = "reserved_by_other"};
+}
+
+}  // namespace landing_coordinator
+
+namespace landing_coordinator {
+
+CompletionDecision LandingArbitrator::reportLandingComplete(const std::string& drone_id,
+                                                            std::uint64_t mission_id, bool success)
+{
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  if (drone_id.find_first_not_of(" \t\n\r") == std::string::npos) {
+    return {.reason = "invalid_drone_id"};
+  }
+  if (owner_id_.empty()) {
+    return {.reason = "no_active_mission"};
+  }
+  if (mission_id != mission_id_) {
+    return {.reason = "wrong_mission_id"};
+  }
+  if (drone_id != owner_id_) {
+    return {.reason = "not_owner"};
+  }
+  if (!success) {
+    return {.completed = completed_, .reason = "unsuccessful_result"};
+  }
+  if (completed_) {
+    return {.accepted = true, .completed = true, .reason = "already_completed"};
+  }
+
+  completed_ = true;
+  return {.accepted = true, .completed = true, .newly_completed = true, .reason = "completed"};
 }
 
 }  // namespace landing_coordinator

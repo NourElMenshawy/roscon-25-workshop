@@ -2,7 +2,8 @@
 
 namespace landing_mission_controller {
 
-const char* stateName(MissionState state) noexcept {
+const char* stateName(MissionState state) noexcept
+{
   switch (state) {
     case MissionState::SEARCHING:
       return "SEARCHING";
@@ -14,11 +15,16 @@ const char* stateName(MissionState state) noexcept {
       return "PRIMARY";
     case MissionState::FOLLOWER:
       return "FOLLOWER";
+    case MissionState::LANDED:
+      return "LANDED";
+    case MissionState::READY_FOR_SELECTION:
+      return "READY_FOR_SELECTION";
   }
   return "UNKNOWN";
 }
 
-void MissionPolicy::observeTag(TimePoint now) {
+void MissionPolicy::observeTag(TimePoint now)
+{
   if (state_ == MissionState::SEARCHING) {
     first_seen_ = now;
     state_ = MissionState::WAITING_TO_REQUEST;
@@ -28,35 +34,37 @@ void MissionPolicy::observeTag(TimePoint now) {
   }
 }
 
-void MissionPolicy::expireObservation(TimePoint now, std::chrono::milliseconds max_age) {
+void MissionPolicy::expireObservation(TimePoint now, std::chrono::milliseconds max_age)
+{
   if (state_ == MissionState::WAITING_TO_REQUEST && now - last_seen_ > max_age) {
     state_ = MissionState::SEARCHING;
   }
 }
 
-bool MissionPolicy::readyToRequest(TimePoint now,
-                                   std::chrono::milliseconds delay,
-                                   std::chrono::milliseconds max_age) const {
-  return state_ == MissionState::WAITING_TO_REQUEST &&
-         now - first_seen_ >= delay && now - last_seen_ <= max_age;
+bool MissionPolicy::readyToRequest(TimePoint now, std::chrono::milliseconds delay,
+                                   std::chrono::milliseconds max_age) const
+{
+  return state_ == MissionState::WAITING_TO_REQUEST && now - first_seen_ >= delay &&
+         now - last_seen_ <= max_age;
 }
 
-void MissionPolicy::requestSent() {
+void MissionPolicy::requestSent()
+{
   if (state_ == MissionState::WAITING_TO_REQUEST) {
     state_ = MissionState::REQUESTING;
   }
 }
 
-void MissionPolicy::requestTimedOut() {
+void MissionPolicy::requestTimedOut()
+{
   if (state_ == MissionState::REQUESTING) {
-    // Retry only if a new observation arrives; do not keep claiming ownership blindly.
     state_ = MissionState::SEARCHING;
   }
 }
 
 void MissionPolicy::receiveDecision(bool granted, std::string_view owner_id,
-                                    std::string_view local_drone_id,
-                                    std::uint64_t mission_id) {
+                                    std::string_view local_drone_id, std::uint64_t mission_id)
+{
   if (state_ != MissionState::REQUESTING) {
     return;
   }
@@ -69,13 +77,51 @@ void MissionPolicy::receiveDecision(bool granted, std::string_view owner_id,
   if (granted && owner_id == local_drone_id) {
     state_ = MissionState::PRIMARY;
     mission_id_ = mission_id;
+    owner_id_ = std::string(owner_id);
   } else if (!granted && owner_id != local_drone_id) {
     state_ = MissionState::FOLLOWER;
     mission_id_ = mission_id;
+    owner_id_ = std::string(owner_id);
   } else {
     // Invalid/inconsistent server response: do not assign a flight role.
     state_ = MissionState::SEARCHING;
   }
+}
+
+bool MissionPolicy::receiveStatus(std::uint8_t resource_state, std::string_view owner_id,
+                                  std::string_view local_drone_id, std::uint64_t mission_id)
+{
+  constexpr std::uint8_t kAvailable = 0;
+  constexpr std::uint8_t kReserved = 1;
+  constexpr std::uint8_t kCompleted = 2;
+
+  if (resource_state == kAvailable) {
+    return mission_id == 0 && owner_id.empty() && mission_id_ == 0;
+  }
+  if ((resource_state != kReserved && resource_state != kCompleted) || mission_id == 0 ||
+      owner_id.empty() || local_drone_id.empty()) {
+    return false;
+  }
+  if (mission_id < mission_id_ ||
+      (mission_id == mission_id_ && !owner_id_.empty() && owner_id_ != owner_id)) {
+    return false;
+  }
+  if (mission_id == mission_id_ && completion_seen_ && resource_state == kReserved) {
+    return false;
+  }
+  if (mission_id > mission_id_) {
+    completion_seen_ = false;
+  }
+
+  mission_id_ = mission_id;
+  owner_id_ = std::string(owner_id);
+  if (resource_state == kCompleted) {
+    completion_seen_ = true;
+    state_ = owner_id == local_drone_id ? MissionState::LANDED : MissionState::READY_FOR_SELECTION;
+  } else {
+    state_ = owner_id == local_drone_id ? MissionState::PRIMARY : MissionState::FOLLOWER;
+  }
+  return true;
 }
 
 }  // namespace landing_mission_controller

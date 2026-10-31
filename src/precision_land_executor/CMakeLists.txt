@@ -21,8 +21,10 @@ find_package(Eigen3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(landing_coordinator REQUIRED)
 find_package(Threads REQUIRED)
 find_package(TBB REQUIRED)
+
 # ============================================================
 # stdexec interface library
 # ============================================================
@@ -68,11 +70,11 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   Eigen3::Eigen
   ${geometry_msgs_TARGETS}
   ${px4_msgs_TARGETS}
+  ${landing_coordinator_TARGETS}
   tf2_ros::tf2_ros
   tf2::tf2
   stdexec_headers
 )
-
 
 # ============================================================
 # stdexec smoke test executable

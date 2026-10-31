@@ -17,7 +17,7 @@
   <depend>eigen3_cmake_module</depend>
   <depend>geometry_msgs</depend>
   <depend>tf2_ros</depend>
-
+  <depend>landing_coordinator</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
 

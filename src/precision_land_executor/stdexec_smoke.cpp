@@ -1,11 +1,11 @@
 #include <exec/static_thread_pool.hpp>
-#include <stdexec/execution.hpp>
-
 #include <iostream>
+#include <stdexec/execution.hpp>
 #include <thread>
 #include <utility>
 
-int main() {
+int main()
+{
   exec::static_thread_pool pool{2};
 
   auto scheduler = pool.get_scheduler();
@@ -14,8 +14,7 @@ int main() {
 
   // Construct a lazy computation.
   auto pipeline = stdexec::schedule(scheduler) | stdexec::then([] {
-                    std::cout << "Worker thread: " << std::this_thread::get_id()
-                              << '\n';
+                    std::cout << "Worker thread: " << std::this_thread::get_id() << '\n';
 
                     std::cout << "Processing observation\n";
                     return 42;
