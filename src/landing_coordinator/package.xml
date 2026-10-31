@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>landing_coordinator</name>
+  <version>0.1.0</version>
+  <description>First-wins exclusive landing arbitration for the PX4/ROS 2 two-drone demo.</description>
+  <maintainer email="nour.el.menshawy@gmail.com">NourElMenshawy</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rosidl_default_generators</build_depend>
+  <depend>rclcpp</depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <test_depend>ament_cmake_gtest</test_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

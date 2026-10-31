@@ -1,0 +1,11 @@
+# The identity of the drone requesting the single landing resource.
+string drone_id
+---
+# True for the first owner and for idempotent retries by that same owner.
+bool granted
+# Empty when the landing resource remains available.
+string owner_id
+# 0 before the first reservation; 1 in this initial single-mission version.
+uint64 mission_id
+# One of: granted, already_owner, reserved_by_other, invalid_drone_id.
+string reason
