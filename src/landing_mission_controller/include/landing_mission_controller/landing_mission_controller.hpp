@@ -1,28 +1,30 @@
 #pragma once
 
-#include <chrono>
-#include <cstdint>
+#include "landing_mission_controller/mission_policy.hpp"
+
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <landing_coordinator/msg/landing_status.hpp>
 #include <landing_coordinator/srv/request_landing.hpp>
-#include <memory>
 #include <rclcpp/rclcpp.hpp>
-#include <string>
+#include <std_msgs/msg/bool.hpp>
 
-#include "landing_mission_controller/mission_policy.hpp"
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <string>
 
 namespace landing_mission_controller {
 
 class LandingMissionController final : public rclcpp::Node {
- public:
+public:
   explicit LandingMissionController(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
   [[nodiscard]] MissionState state() const noexcept { return policy_.state(); }
   [[nodiscard]] std::uint64_t missionId() const noexcept { return policy_.missionId(); }
 
- private:
-  using RequestLanding = landing_coordinator::srv::RequestLanding;
+private:
   using LandingStatus = landing_coordinator::msg::LandingStatus;
+  using RequestLanding = landing_coordinator::srv::RequestLanding;
   using Clock = std::chrono::steady_clock;
 
   static bool isValidObservation(const geometry_msgs::msg::PoseStamped& observation);
@@ -38,6 +40,9 @@ class LandingMissionController final : public rclcpp::Node {
   const std::string coordinator_service_;
   const std::string status_topic_;
   const std::chrono::milliseconds request_delay_;
+  const bool require_approach_ready_;
+  bool approach_ready_{false};
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr approach_sub_;
   const std::chrono::milliseconds observation_timeout_;
   const std::chrono::milliseconds response_timeout_;
 
@@ -46,8 +51,8 @@ class LandingMissionController final : public rclcpp::Node {
   Clock::time_point request_sent_at_{};
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_sub_;
-  rclcpp::Client<RequestLanding>::SharedPtr client_;
   rclcpp::Subscription<LandingStatus>::SharedPtr status_sub_;
+  rclcpp::Client<RequestLanding>::SharedPtr client_;
   rclcpp::TimerBase::SharedPtr timer_;
 };
 

@@ -16,7 +16,9 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
     : ModeExecutorBase(Settings{}, owned_mode), _second_mode(second_mode) {
   auto& ros_node = node();
 
-  _drone_id = ros_node.declare_parameter<std::string>("drone_id", "");
+  // The owned CustomWaypoints mode declares these before the executor.
+  ros_node.get_parameter("drone_id", _drone_id);
+  ros_node.get_parameter("approach_enabled", _approach_enabled);
   _px4_system_id = ros_node.declare_parameter<int>("px4_system_id", 1);
   _enable_auto_switch = ros_node.declare_parameter<bool>("enable_auto_switch", false);
   _target_freshness_ms = ros_node.declare_parameter<int>("target_freshness_ms", 1500);
@@ -74,6 +76,12 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
       "/landing_coordinator/landing_sites", rclcpp::QoS(1).reliable().transient_local(),
       [this](LandingSiteMap::ConstSharedPtr sites) { onLandingSites(sites); });
 
+  if (_approach_enabled) {
+    _approach_ready_sub = ros_node.create_subscription<std_msgs::msg::Bool>(
+        "approach/ready", rclcpp::QoS(1).reliable().transient_local(),
+        [this](std_msgs::msg::Bool::ConstSharedPtr ready) { onApproachReady(ready); });
+  }
+
   _status_sub = ros_node.create_subscription<LandingStatus>(
       "/landing_coordinator/status", rclcpp::QoS(1).reliable().transient_local(),
       [this](LandingStatus::ConstSharedPtr status) { onLandingStatus(status); });
@@ -82,6 +90,7 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
   // A timer allows status to arrive before QGC arms the vehicle.
   _activation_timer = ros_node.create_wall_timer(
       std::chrono::milliseconds(200), [this] {
+        tryActivateApproach();
         tryActivatePrimary();
         tryReportCompletion();
         maybeStartFollowerSelection();
@@ -175,6 +184,14 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status) {
     return;
   }
   _authorized_primary = _current_owner == _drone_id;
+  if (_approach_enabled && !_authorized_primary && isInCharge() && isArmed()) {
+    // A follower must not keep advancing once someone else owns the marker.
+    scheduleMode(px4_ros2::ModeBase::kModeIDLoiter,
+                 [this](px4_ros2::Result result) {
+                   RCLCPP_INFO(node().get_logger(), "Follower Hold: %s",
+                               resultToString(result));
+                 });
+  }
   RCLCPP_INFO(node().get_logger(), "Mission %llu owner=%s role=%s",
               static_cast<unsigned long long>(_mission_id),
               _current_owner.c_str(), _authorized_primary ? "PRIMARY" : "FOLLOWER");
@@ -221,24 +238,78 @@ void CustomModeExecutor::onTargetPose(PoseStamped::ConstSharedPtr observation) {
   }
 }
 
-void CustomModeExecutor::tryActivatePrimary() {
+void CustomModeExecutor::onApproachReady(std_msgs::msg::Bool::ConstSharedPtr ready)
+{
+  _approach_ready = ready->data;
+}
+
+void CustomModeExecutor::tryActivateApproach()
+{
+  if (!_approach_enabled || !_enable_auto_switch || _mission_id != 0 ||
+      _approach_activation_attempted || !isArmed() || !_route_airborne ||
+      _vehicle_failsafe_active || isInCharge() ||
+      ownedMode().id() == px4_ros2::ModeBase::kModeIDInvalid ||
+      _command_pub->get_subscription_count() == 0) {
+    return;
+  }
+  VehicleCommand command{};
+  command.command = VehicleCommand::VEHICLE_CMD_SET_NAV_STATE;
+  command.param1 = static_cast<float>(ownedMode().id());
+  command.target_system = static_cast<std::uint8_t>(_px4_system_id);
+  command.target_component = 1;
+  command.source_system = 200;
+  command.source_component = 1;
+  command.from_external = true;
+  // Request only once. A QGC override must not cause a mode-switch loop.
+  _approach_activation_attempted = true;
+  RCLCPP_INFO(node().get_logger(),
+              "Starting approach navigation for %s (nav_state=%u)",
+              _drone_id.c_str(), static_cast<unsigned>(ownedMode().id()));
+  _command_pub->publish(command);
+}
+
+void CustomModeExecutor::beginPrecisionLanding()
+{
+  if (_precision_scheduled || !_authorized_primary || !isArmed() ||
+      _vehicle_failsafe_active) {
+    return;
+  }
+  _precision_scheduled = true;
+  _precision_started = true;
+  _precision_succeeded = false;
+  _observed_airborne = false;
+  _touchdown_confirmed = false;
+  _observed_armed = false;
+  _landing_disarm_confirmed = false;
+  _failsafe_observed = false;
+  _activation_status_floor_us = _last_vehicle_status_us;
+  switchToState(State::PrecisionLand, px4_ros2::Result::Success);
+}
+
+void CustomModeExecutor::tryActivatePrimary()
+{
+  if (_approach_enabled) {
+    if (_enable_auto_switch && _authorized_primary && _approach_ready &&
+        _last_valid_target && !_precision_scheduled && isInCharge() &&
+        isArmed() && !_vehicle_failsafe_active &&
+        Clock::now() - *_last_valid_target <=
+            std::chrono::milliseconds(_target_freshness_ms)) {
+      beginPrecisionLanding();
+    }
+    return;
+  }
+
   if (!_enable_auto_switch || !_authorized_primary || _activation_requested ||
       !isArmed() || isInCharge() || !_last_valid_target ||
       _command_pub->get_subscription_count() == 0) {
     return;
   }
-
   if (Clock::now() - *_last_valid_target >
-      std::chrono::milliseconds(_target_freshness_ms)) {
+      std::chrono::milliseconds(_target_freshness_ms) ||
+      ownedMode().id() == px4_ros2::ModeBase::kModeIDInvalid) {
     return;
   }
-
-  if (ownedMode().id() == px4_ros2::ModeBase::kModeIDInvalid) {
-    return;
-  }
-
   VehicleCommand cmd{};
-  cmd.timestamp = 0;
   cmd.command = VehicleCommand::VEHICLE_CMD_SET_NAV_STATE;
   cmd.param1 = static_cast<float>(ownedMode().id());
   cmd.target_system = static_cast<std::uint8_t>(_px4_system_id);
@@ -246,11 +317,6 @@ void CustomModeExecutor::tryActivatePrimary() {
   cmd.source_system = 200;
   cmd.source_component = 1;
   cmd.from_external = true;
-
-  // Request a switch into the executor's OWNED mode. The PX4 interface
-  // library then calls onActivate(), where PrecisionLand is scheduled.
-  // Deliberately a single request per mission: if PX4 rejects it or a GCS
-  // overrides it, do not repeatedly seize control.
   _activation_requested = true;
   RCLCPP_INFO(node().get_logger(),
               "Requesting PX4 mode activation mission=%llu nav_state=%u",
@@ -271,8 +337,20 @@ void CustomModeExecutor::onVehicleCommandAck(VehicleCommandAck::ConstSharedPtr a
 void CustomModeExecutor::onActivate() {
   RCLCPP_INFO(node().get_logger(), "CustomModeExecutor activated");
 
-  // Fail closed: even if someone manually selects the owned mode,
-  // do not begin landing without coordinator authorization.
+  // A competition approach is allowed before landing authorization.
+  // Only the coordinator's PRIMARY grant can start PrecisionLandCustom.
+  if (_approach_enabled && _mission_id == 0 && isArmed() && _route_airborne &&
+      !_vehicle_failsafe_active) {
+    RCLCPP_INFO(node().get_logger(),
+                "Approach mode active; awaiting staging readiness and landing grant");
+    return;
+  }
+  if (_approach_enabled && _authorized_primary && _approach_ready && isArmed()) {
+    tryActivatePrimary();
+    return;
+  }
+
+  // Fail closed: a manual selection cannot bypass coordinator authorization.
   if (!_authorized_primary || _mission_id == 0 || !isArmed()) {
     RCLCPP_WARN(node().get_logger(),
                 "No current landing grant for this drone; requesting PX4 Hold");
@@ -283,19 +361,7 @@ void CustomModeExecutor::onActivate() {
     return;
   }
 
-  if (_precision_scheduled) {
-    return;
-  }
-  _precision_scheduled = true;
-  _precision_started = true;
-  _precision_succeeded = false;
-  _observed_airborne = false;
-  _touchdown_confirmed = false;
-  _observed_armed = false;
-  _landing_disarm_confirmed = false;
-  _failsafe_observed = false;
-  _activation_status_floor_us = _last_vehicle_status_us;
-  switchToState(State::PrecisionLand, px4_ros2::Result::Success);
+  beginPrecisionLanding();
 }
 
 void CustomModeExecutor::onDeactivate(DeactivateReason reason) {
@@ -357,6 +423,7 @@ void CustomModeExecutor::switchToState(State state, px4_ros2::Result previous_re
 
 void CustomModeExecutor::onVehicleLandDetected(
     VehicleLandDetected::ConstSharedPtr event) {
+  _route_airborne = !event->landed;
   if (!_precision_started || _completion_acknowledged) {
     return;
   }

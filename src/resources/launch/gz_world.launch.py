@@ -18,29 +18,51 @@ from launch_ros.substitutions import FindPackageShare
 
 def _is_true(value: str) -> bool:
     return value.lower() in {
-        '1',
-        'true',
-        'yes',
-        'on',
+        "1",
+        "true",
+        "yes",
+        "on",
     }
 
 
 def _join_paths(*entries: str) -> str:
-    return ':'.join(entry for entry in entries if entry)
+    return ":".join(
+        entry
+        for entry in entries
+        if entry
+    )
 
 
 def _launch_setup(context):
     px4_autopilot_path = path.expanduser(
-        LaunchConfiguration('px4_autopilot_path').perform(context)
+        LaunchConfiguration(
+            "px4_autopilot_path"
+        ).perform(context)
     )
 
-    world_name = LaunchConfiguration('world').perform(context)
+    world_name = LaunchConfiguration(
+        "world"
+    ).perform(context)
 
-    extra_gz_resource_path = LaunchConfiguration('extra_gz_resource_path').perform(context)
+    custom_world_file = LaunchConfiguration('world_file').perform(context)
 
-    bridge_config_file = LaunchConfiguration('bridge_config_file').perform(context)
+    extra_gz_resource_path = (
+        LaunchConfiguration(
+            "extra_gz_resource_path"
+        ).perform(context)
+    )
 
-    headless = _is_true(LaunchConfiguration('headless').perform(context))
+    bridge_config_file = (
+        LaunchConfiguration(
+            "bridge_config_file"
+        ).perform(context)
+    )
+
+    headless = _is_true(
+        LaunchConfiguration(
+            "headless"
+        ).perform(context)
+    )
 
     # --------------------------------------------------
     # PX4 Gazebo paths
@@ -48,43 +70,43 @@ def _launch_setup(context):
 
     px4_gz_root = path.join(
         px4_autopilot_path,
-        'Tools',
-        'simulation',
-        'gz',
+        "Tools",
+        "simulation",
+        "gz",
     )
 
     px4_worlds_path = path.join(
         px4_gz_root,
-        'worlds',
+        "worlds",
     )
 
     px4_models_path = path.join(
         px4_gz_root,
-        'models',
+        "models",
     )
 
-    world_file = path.join(
-        px4_worlds_path,
-        f'{world_name}.sdf',
+    world_file = (
+        path.abspath(path.expanduser(custom_world_file))
+        if custom_world_file else path.join(px4_worlds_path, f'{world_name}.sdf')
     )
 
     px4_gz_plugin_path = path.join(
         px4_autopilot_path,
-        'build',
-        'px4_sitl_default',
-        'src',
-        'modules',
-        'simulation',
-        'gz_plugins',
+        "build",
+        "px4_sitl_default",
+        "src",
+        "modules",
+        "simulation",
+        "gz_plugins",
     )
 
     px4_gz_server_config_path = path.join(
         px4_autopilot_path,
-        'src',
-        'modules',
-        'simulation',
-        'gz_bridge',
-        'server.config',
+        "src",
+        "modules",
+        "simulation",
+        "gz_bridge",
+        "server.config",
     )
 
     # --------------------------------------------------
@@ -92,16 +114,30 @@ def _launch_setup(context):
     # --------------------------------------------------
 
     if not path.isdir(px4_autopilot_path):
-        raise RuntimeError(f'PX4 path does not exist: {px4_autopilot_path}')
+        raise RuntimeError(
+            "PX4 path does not exist: "
+            f"{px4_autopilot_path}"
+        )
 
     if not path.isfile(world_file):
-        raise RuntimeError(f'Gazebo world does not exist: {world_file}')
+        raise RuntimeError(
+            "Gazebo world does not exist: "
+            f"{world_file}"
+        )
 
-    if not path.isfile(px4_gz_server_config_path):
-        raise RuntimeError(f'PX4 Gazebo server config does not exist: {px4_gz_server_config_path}')
+    if not path.isfile(
+        px4_gz_server_config_path
+    ):
+        raise RuntimeError(
+            "PX4 Gazebo server config does not exist: "
+            f"{px4_gz_server_config_path}"
+        )
 
     if not path.isfile(bridge_config_file):
-        raise RuntimeError(f'ROS/Gazebo bridge config does not exist: {bridge_config_file}')
+        raise RuntimeError(
+            "ROS/Gazebo bridge config does not exist: "
+            f"{bridge_config_file}"
+        )
 
     # --------------------------------------------------
     # Environment
@@ -109,8 +145,8 @@ def _launch_setup(context):
 
     resource_path = _join_paths(
         environ.get(
-            'GZ_SIM_RESOURCE_PATH',
-            '',
+            "GZ_SIM_RESOURCE_PATH",
+            "",
         ),
         px4_models_path,
         px4_worlds_path,
@@ -119,21 +155,23 @@ def _launch_setup(context):
 
     plugin_path = _join_paths(
         environ.get(
-            'GZ_SIM_SYSTEM_PLUGIN_PATH',
-            '',
+            "GZ_SIM_SYSTEM_PLUGIN_PATH",
+            "",
         ),
         px4_gz_plugin_path,
     )
 
     actions = [
         SetEnvironmentVariable(
-            'GZ_SIM_RESOURCE_PATH',
+            "GZ_SIM_RESOURCE_PATH",
             resource_path,
         ),
+
         SetEnvironmentVariable(
-            'GZ_SIM_SYSTEM_PLUGIN_PATH',
+            "GZ_SIM_SYSTEM_PLUGIN_PATH",
             plugin_path,
         ),
+
         #
         # This is critical for PX4.
         #
@@ -148,12 +186,13 @@ def _launch_setup(context):
         #   ...
         #
         SetEnvironmentVariable(
-            'GZ_SIM_SERVER_CONFIG_PATH',
+            "GZ_SIM_SERVER_CONFIG_PATH",
             px4_gz_server_config_path,
         ),
+
         SetEnvironmentVariable(
-            'GZ_IP',
-            '127.0.0.1',
+            "GZ_IP",
+            "127.0.0.1",
         ),
     ]
 
@@ -170,20 +209,20 @@ def _launch_setup(context):
     # --------------------------------------------------
 
     gz_cmd = [
-        'gz',
-        'sim',
-        '-r',
+        "gz",
+        "sim",
+        "-r",
         world_file,
     ]
 
     if headless:
-        gz_cmd.append('-s')
+        gz_cmd.append("-s")
 
     actions.append(
         ExecuteProcess(
             cmd=gz_cmd,
-            name='gz_sim',
-            output='screen',
+            name="gz_sim",
+            output="screen",
             emulate_tty=True,
         )
     )
@@ -197,13 +236,14 @@ def _launch_setup(context):
 
     actions.append(
         Node(
-            package='ros_gz_bridge',
-            executable='parameter_bridge',
-            name='gz_ros_bridge',
-            output='screen',
+            package="ros_gz_bridge",
+            executable="parameter_bridge",
+            name="gz_ros_bridge",
+            output="screen",
             parameters=[
                 {
-                    'config_file': bridge_config_file,
+                    "config_file":
+                        bridge_config_file,
                 }
             ],
         )
@@ -216,37 +256,49 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                'px4_autopilot_path',
+                "px4_autopilot_path",
                 default_value=EnvironmentVariable(
-                    'PX4_PATH',
-                    default_value=('~/PX4-Autopilot'),
+                    "PX4_PATH",
+                    default_value=(
+                        "~/PX4-Autopilot"
+                    ),
                 ),
             ),
+
             DeclareLaunchArgument(
-                'world',
-                default_value='default',
+                "world",
+                default_value="default",
             ),
+            DeclareLaunchArgument('world_file', default_value=''),
+
             DeclareLaunchArgument(
-                'extra_gz_resource_path',
-                default_value='',
+                "extra_gz_resource_path",
+                default_value="",
             ),
+
             DeclareLaunchArgument(
-                'bridge_config_file',
+                "bridge_config_file",
                 default_value=PathJoinSubstitution(
                     [
-                        FindPackageShare('resources'),
-                        'cfg',
-                        'clock_bridge.yaml',
+                        FindPackageShare(
+                            "resources"
+                        ),
+                        "cfg",
+                        "clock_bridge.yaml",
                     ]
                 ),
             ),
+
             DeclareLaunchArgument(
-                'headless',
+                "headless",
                 default_value=EnvironmentVariable(
-                    'HEADLESS',
-                    default_value='false',
+                    "HEADLESS",
+                    default_value="false",
                 ),
             ),
-            OpaqueFunction(function=_launch_setup),
+
+            OpaqueFunction(
+                function=_launch_setup
+            ),
         ]
     )

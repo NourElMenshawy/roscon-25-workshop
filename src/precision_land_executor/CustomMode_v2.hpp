@@ -14,22 +14,29 @@
 #include <px4_ros2/utils/geometry.hpp>
 
 // ROS 2 Core
-#include <exec/async_scope.hpp>
-#include <exec/static_thread_pool.hpp>
+#include <tf2/LinearMath/Matrix3x3.hpp>
+#include <tf2/LinearMath/Quaternion.hpp>
+
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
 #include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <geometry_msgs/msg/point_stamped.hpp>
+#include <landing_coordinator/msg/landing_status.hpp>
+#include <tf2_ros/buffer.hpp>
+#include <tf2_ros/transform_listener.hpp>
+#include <precision_land_executor/approach_route.hpp>
 #include <std_msgs/msg/bool.hpp>
+
+#include <exec/async_scope.hpp>
+#include <exec/static_thread_pool.hpp>
 #include <stdexec/execution.hpp>
-#include <tf2/LinearMath/Matrix3x3.hpp>
-#include <tf2/LinearMath/Quaternion.hpp>
 
 // C++ Std
 #include <Eigen/Eigen>
 #include <algorithm>
-#include <cmath>  // for M_PI
+#include <cmath> // for M_PI
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -40,48 +47,71 @@
 #include <vector>
 
 class CustomWaypoints : public px4_ros2::ModeBase {
- public:
-  explicit CustomWaypoints(rclcpp::Node& node);
+public:
+  explicit CustomWaypoints(rclcpp::Node &node);
 
   // See ModeBase
   void onActivate() override;
   void onDeactivate() override;
   void updateSetpoint([[maybe_unused]] float dt_s) override;
 
- private:
+private:
   void loadParameters();
+  void onCoordinatorStatus(landing_coordinator::msg::LandingStatus::ConstSharedPtr status);
+  bool resolveWorldWaypoints();
+
+  bool _approach_enabled{false};
+  bool _route_active{false};
+  bool _route_ready{false};
+  bool _route_frozen{false};
+  bool _route_transforms_resolved{false};
+  double _arrival_radius_m{0.75};
+  std::string _drone_id;
+  std::string _world_frame{"map"};
+  std::string _local_frame;
+  std::vector<double> _route_world;
+  Eigen::Vector3f _frozen_position{Eigen::Vector3f::Zero()};
+  rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr _ready_pub;
+  rclcpp::Subscription<landing_coordinator::msg::LandingStatus>::SharedPtr _coordinator_sub;
+  std::shared_ptr<tf2_ros::Buffer> _tf_buffer;
+  std::shared_ptr<tf2_ros::TransformListener> _tf_listener;
+
   // ROS 2
-  rclcpp::Node& _node;
+  rclcpp::Node &_node;
 
   // px4_ros2_cpp
   std::shared_ptr<px4_ros2::TrajectorySetpointType> _trajectory_setpoint;
   std::shared_ptr<px4_ros2::OdometryLocalPosition> _local_position;
 
-  std::vector<Eigen::Vector3f> _trajectory_waypoints;  // Vector to hold waypoints
-  size_t _current_waypoint_index;                      // Index of the current waypoint
+  std::vector<Eigen::Vector3f>
+      _trajectory_waypoints;      // Vector to hold waypoints
+  size_t _current_waypoint_index; // Index of the current waypoint
 };
 // PrecisionLand
 class PrecisionLand : public px4_ros2::ModeBase {
- public:
-  explicit PrecisionLand(rclcpp::Node& node);
+public:
+  explicit PrecisionLand(rclcpp::Node &node);
   ~PrecisionLand() override;
 
-  void targetPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr& msg);
-  void vehicleLandDetectedCallback(const px4_msgs::msg::VehicleLandDetected::SharedPtr& msg);
+  void
+  targetPoseCallback(const geometry_msgs::msg::PoseStamped::SharedPtr &msg);
+  void vehicleLandDetectedCallback(
+      const px4_msgs::msg::VehicleLandDetected::SharedPtr &msg);
 
   // See ModeBase
   void onActivate() override;
   void onDeactivate() override;
   void updateSetpoint(float dt_s) override;
 
- private:
+private:
   struct ArucoTag {
     // Initialize position with NaN values directly in the struct
-    Eigen::Vector3d position = Eigen::Vector3d::Constant(std::numeric_limits<double>::quiet_NaN());
+    Eigen::Vector3d position =
+        Eigen::Vector3d::Constant(std::numeric_limits<double>::quiet_NaN());
     Eigen::Quaterniond orientation;
     rclcpp::Time timestamp;
 
-    bool valid() { return timestamp.nanoseconds() > 0; }
+    bool valid() { return timestamp.nanoseconds() > 0; };
   };
 
   struct PoseSnapshot {
@@ -92,11 +122,11 @@ class PrecisionLand : public px4_ros2::ModeBase {
   };
   void loadParameters();
 
-  static ArucoTag getTagWorld(const PoseSnapshot& snapshot);
+  static ArucoTag getTagWorld(const PoseSnapshot &snapshot);
 
   Eigen::Vector2f calculateVelocitySetpointXY();
   bool checkTargetTimeout();
-  bool positionReached(const Eigen::Vector3f& target) const;
+  bool positionReached(const Eigen::Vector3f &target) const;
   struct PendingTarget {
     ArucoTag world_tag;
     std::uint64_t generation;
@@ -127,9 +157,9 @@ class PrecisionLand : public px4_ros2::ModeBase {
 
   enum class State {
     Idle,
-    Search,    // Searches for target using a search pattern
-    Approach,  // Positioning over landing target while maintaining altitude
-    Descend,   // Stay over landing target while descending
+    Search,   // Searches for target using a search pattern
+    Approach, // Positioning over landing target while maintaining altitude
+    Descend,  // Stay over landing target while descending
     Finished
   };
 
@@ -137,9 +167,11 @@ class PrecisionLand : public px4_ros2::ModeBase {
   std::string stateName(State state);
 
   // ros2
-  rclcpp::Node& _node;
-  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr _target_pose_sub;
-  rclcpp::Subscription<px4_msgs::msg::VehicleLandDetected>::SharedPtr _vehicle_land_detected_sub;
+  rclcpp::Node &_node;
+  rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr
+      _target_pose_sub;
+  rclcpp::Subscription<px4_msgs::msg::VehicleLandDetected>::SharedPtr
+      _vehicle_land_detected_sub;
 
   // px4_ros2_cpp
   std::shared_ptr<px4_ros2::OdometryLocalPosition> _vehicle_local_position;

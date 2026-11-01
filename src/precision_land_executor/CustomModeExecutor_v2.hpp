@@ -19,6 +19,7 @@
 #include <tf2_ros/buffer.hpp>
 #include <tf2_ros/transform_listener.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/bool.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -56,6 +57,9 @@ private:
   void tryReportCompletion();
   void onCompletionResponse(rclcpp::Client<ReportLandingComplete>::SharedFuture future);
   void tryActivatePrimary();
+  void tryActivateApproach();
+  void beginPrecisionLanding();
+  void onApproachReady(std_msgs::msg::Bool::ConstSharedPtr ready);
   void startFollowerSelection();
   void maybeStartFollowerSelection();
   void pollFollowerSelection();
@@ -67,6 +71,10 @@ private:
   std::string _drone_id;
   int _px4_system_id{1};
   bool _enable_auto_switch{false};
+  bool _approach_enabled{false};
+  bool _approach_activation_attempted{false};
+  bool _route_airborne{false};
+  bool _approach_ready{false};
   int _target_freshness_ms{1500};
   std::uint64_t _mission_id{0};
   std::string _current_owner;
@@ -102,6 +110,7 @@ private:
   double _site_separation_margin_m{2.0};
 
   rclcpp::Subscription<LandingStatus>::SharedPtr _status_sub;
+  rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr _approach_ready_sub;
   rclcpp::Subscription<LandingSiteMap>::SharedPtr _sites_sub;
   rclcpp::Subscription<PoseStamped>::SharedPtr _target_sub;
   rclcpp::Subscription<VehicleCommandAck>::SharedPtr _command_ack_sub;

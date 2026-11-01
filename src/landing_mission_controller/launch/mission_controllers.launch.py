@@ -6,59 +6,57 @@ from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
-    coordinator = LaunchConfiguration('coordinator_service')
-    return LaunchDescription(
-        [
-            DeclareLaunchArgument(
-                'coordinator_service',
-                default_value='/landing_coordinator/request_landing',
-            ),
-            DeclareLaunchArgument(
-                'coordinator_status_topic', default_value='/landing_coordinator/status'
-            ),
-            DeclareLaunchArgument('drone_a_target_topic', default_value='/px4_0/target_pose'),
-            DeclareLaunchArgument('drone_b_target_topic', default_value='/px4_1/target_pose'),
-            DeclareLaunchArgument('drone_a_delay_ms', default_value='100'),
-            DeclareLaunchArgument('drone_b_delay_ms', default_value='300'),
-            Node(
-                package='landing_mission_controller',
-                executable='landing_mission_controller_node',
-                namespace='drone_a',
-                name='landing_mission_controller',
-                parameters=[
-                    {
-                        'drone_id': 'drone_a',
-                        'target_topic': LaunchConfiguration('drone_a_target_topic'),
-                        'coordinator_service': coordinator,
-                        'status_topic': LaunchConfiguration('coordinator_status_topic'),
-                        'request_delay_ms': ParameterValue(
-                            LaunchConfiguration('drone_a_delay_ms'), value_type=int
-                        ),
-                        'observation_timeout_ms': 1500,
-                        'response_timeout_ms': 3000,
-                    }
-                ],
-                output='screen',
-            ),
-            Node(
-                package='landing_mission_controller',
-                executable='landing_mission_controller_node',
-                namespace='drone_b',
-                name='landing_mission_controller',
-                parameters=[
-                    {
-                        'drone_id': 'drone_b',
-                        'target_topic': LaunchConfiguration('drone_b_target_topic'),
-                        'coordinator_service': coordinator,
-                        'status_topic': LaunchConfiguration('coordinator_status_topic'),
-                        'request_delay_ms': ParameterValue(
-                            LaunchConfiguration('drone_b_delay_ms'), value_type=int
-                        ),
-                        'observation_timeout_ms': 1500,
-                        'response_timeout_ms': 3000,
-                    }
-                ],
-                output='screen',
-            ),
-        ]
-    )
+    coordinator = LaunchConfiguration("coordinator_service")
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "coordinator_service",
+            default_value="/landing_coordinator/request_landing",
+        ),
+        DeclareLaunchArgument("drone_a_target_topic", default_value="/px4_0/target_pose"),
+        DeclareLaunchArgument("drone_b_target_topic", default_value="/px4_1/target_pose"),
+        DeclareLaunchArgument("drone_a_delay_ms", default_value="100"),
+        DeclareLaunchArgument("drone_b_delay_ms", default_value="300"),
+        DeclareLaunchArgument('require_approach_ready', default_value='false'),
+        Node(
+            package="landing_mission_controller",
+            executable="landing_mission_controller_node",
+            namespace="drone_a",
+            name="landing_mission_controller",
+            parameters=[{
+                "drone_id": "drone_a",
+                'require_approach_ready': ParameterValue(
+                    LaunchConfiguration('require_approach_ready'), value_type=bool
+                ),
+                'approach_ready_topic': '/px4_0/approach/ready',
+                "target_topic": LaunchConfiguration("drone_a_target_topic"),
+                "coordinator_service": coordinator,
+                "request_delay_ms": ParameterValue(
+                    LaunchConfiguration("drone_a_delay_ms"), value_type=int
+                ),
+                "observation_timeout_ms": 1500,
+                "response_timeout_ms": 3000,
+            }],
+            output="screen",
+        ),
+        Node(
+            package="landing_mission_controller",
+            executable="landing_mission_controller_node",
+            namespace="drone_b",
+            name="landing_mission_controller",
+            parameters=[{
+                "drone_id": "drone_b",
+                'require_approach_ready': ParameterValue(
+                    LaunchConfiguration('require_approach_ready'), value_type=bool
+                ),
+                'approach_ready_topic': '/px4_1/approach/ready',
+                "target_topic": LaunchConfiguration("drone_b_target_topic"),
+                "coordinator_service": coordinator,
+                "request_delay_ms": ParameterValue(
+                    LaunchConfiguration("drone_b_delay_ms"), value_type=int
+                ),
+                "observation_timeout_ms": 1500,
+                "response_timeout_ms": 3000,
+            }],
+            output="screen",
+        ),
+    ])

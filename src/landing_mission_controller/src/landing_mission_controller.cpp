@@ -12,20 +12,34 @@ LandingMissionController::LandingMissionController(const rclcpp::NodeOptions& op
     : Node("landing_mission_controller", options),
       drone_id_(declare_parameter<std::string>("drone_id", "")),
       target_topic_(declare_parameter<std::string>("target_topic", "target_pose")),
-      coordinator_service_(declare_parameter<std::string>("coordinator_service",
-                                                          "/landing_coordinator/request_landing")),
-      status_topic_(declare_parameter<std::string>("status_topic", "/landing_coordinator/status")),
+      coordinator_service_(declare_parameter<std::string>(
+          "coordinator_service", "/landing_coordinator/request_landing")),
+      status_topic_(declare_parameter<std::string>(
+          "status_topic", "/landing_coordinator/status")),
       request_delay_(declare_parameter<int>("request_delay_ms", 100)),
+      require_approach_ready_(
+          declare_parameter<bool>("require_approach_ready", false)),
       observation_timeout_(declare_parameter<int>("observation_timeout_ms", 1500)),
-      response_timeout_(declare_parameter<int>("response_timeout_ms", 3000))
-{
+      response_timeout_(declare_parameter<int>("response_timeout_ms", 3000)) {
   if (drone_id_.empty() || target_topic_.empty() || coordinator_service_.empty() ||
-      status_topic_.empty() || request_delay_.count() < 0 || observation_timeout_.count() <= 0 ||
+      status_topic_.empty() ||
+      request_delay_.count() < 0 || observation_timeout_.count() <= 0 ||
       response_timeout_.count() <= 0) {
     throw std::invalid_argument("Invalid drone_id/topic/service or timing parameters");
   }
 
   client_ = create_client<RequestLanding>(coordinator_service_);
+  if (require_approach_ready_) {
+    const auto approach_topic = declare_parameter<std::string>(
+        "approach_ready_topic", "approach/ready");
+    approach_sub_ = create_subscription<std_msgs::msg::Bool>(
+        approach_topic, rclcpp::QoS(1).reliable().transient_local(),
+        [this](std_msgs::msg::Bool::ConstSharedPtr message) {
+          approach_ready_ = message->data;
+          RCLCPP_INFO(get_logger(), "Approach staging ready: %s",
+                      approach_ready_ ? "true" : "false");
+        });
+  }
   status_sub_ = create_subscription<LandingStatus>(
       status_topic_, rclcpp::QoS(1).reliable().transient_local(),
       [this](LandingStatus::ConstSharedPtr status) { onStatus(std::move(status)); });
@@ -42,21 +56,20 @@ LandingMissionController::LandingMissionController(const rclcpp::NodeOptions& op
 }
 
 bool LandingMissionController::isValidObservation(
-    const geometry_msgs::msg::PoseStamped& observation)
-{
+    const geometry_msgs::msg::PoseStamped& observation) {
   const auto& p = observation.pose.position;
   const auto& q = observation.pose.orientation;
   const double qnorm2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
   // The ArUco tracker publishes a camera-optical-frame pose, so Z must be forward.
   return std::isfinite(p.x) && std::isfinite(p.y) && std::isfinite(p.z) && p.z > 0.0 &&
-         std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w) &&
-         std::isfinite(qnorm2) && qnorm2 > 1e-10;
+         std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) &&
+         std::isfinite(q.w) && std::isfinite(qnorm2) && qnorm2 > 1e-10;
 }
 
 void LandingMissionController::onObservation(
-    geometry_msgs::msg::PoseStamped::ConstSharedPtr observation)
-{
-  if (!isValidObservation(*observation)) {
+    geometry_msgs::msg::PoseStamped::ConstSharedPtr observation) {
+  if ((require_approach_ready_ && !approach_ready_) ||
+      !isValidObservation(*observation)) {
     return;
   }
   const auto before = policy_.state();
@@ -64,10 +77,10 @@ void LandingMissionController::onObservation(
   logTransition(before);
 }
 
-void LandingMissionController::onStatus(LandingStatus::ConstSharedPtr status)
-{
+void LandingMissionController::onStatus(LandingStatus::ConstSharedPtr status) {
   const auto before = policy_.state();
-  if (!policy_.receiveStatus(status->state, status->owner_id, drone_id_, status->mission_id)) {
+  if (!policy_.receiveStatus(status->state, status->owner_id, drone_id_,
+                             status->mission_id)) {
     RCLCPP_WARN(get_logger(),
                 "Ignoring invalid, stale, or conflicting coordinator status: "
                 "state=%u owner='%s' mission=%llu",
@@ -78,7 +91,8 @@ void LandingMissionController::onStatus(LandingStatus::ConstSharedPtr status)
 
   // The status is authoritative. A pending service reply is no longer needed;
   // cancel it so a delayed reply cannot undo the assigned role.
-  if (policy_.state() == MissionState::PRIMARY || policy_.state() == MissionState::FOLLOWER ||
+  if (policy_.state() == MissionState::PRIMARY ||
+      policy_.state() == MissionState::FOLLOWER ||
       policy_.state() == MissionState::LANDED ||
       policy_.state() == MissionState::READY_FOR_SELECTION) {
     if (pending_request_id_ != -1) {
@@ -89,14 +103,15 @@ void LandingMissionController::onStatus(LandingStatus::ConstSharedPtr status)
   logTransition(before);
 }
 
-void LandingMissionController::onTimer()
-{
+void LandingMissionController::onTimer() {
   const auto now = Clock::now();
   const auto before = policy_.state();
   policy_.expireObservation(now, observation_timeout_);
   logTransition(before);
 
-  if (policy_.state() == MissionState::REQUESTING && now - request_sent_at_ > response_timeout_) {
+  if (policy_.state() == MissionState::REQUESTING &&
+      now - request_sent_at_ > response_timeout_) {
+    // A late response from this attempt must not change the state.
     client_->remove_pending_request(pending_request_id_);
     pending_request_id_ = -1;
     const auto previous = policy_.state();
@@ -106,14 +121,14 @@ void LandingMissionController::onTimer()
     return;
   }
 
-  if (policy_.readyToRequest(now, request_delay_, observation_timeout_) &&
+  if ((!require_approach_ready_ || approach_ready_) &&
+      policy_.readyToRequest(now, request_delay_, observation_timeout_) &&
       client_->service_is_ready()) {
     requestLanding();
   }
 }
 
-void LandingMissionController::requestLanding()
-{
+void LandingMissionController::requestLanding() {
   const auto request = std::make_shared<RequestLanding::Request>();
   request->drone_id = drone_id_;
 
@@ -128,7 +143,8 @@ void LandingMissionController::requestLanding()
           onResponse(std::move(future));
         });
     pending_request_id_ = pending.request_id;
-    RCLCPP_INFO(get_logger(), "Requesting landing ownership: drone='%s'", drone_id_.c_str());
+    RCLCPP_INFO(get_logger(), "Requesting landing ownership: drone='%s'",
+                drone_id_.c_str());
   } catch (const std::exception& error) {
     const auto previous = policy_.state();
     policy_.requestTimedOut();
@@ -137,8 +153,8 @@ void LandingMissionController::requestLanding()
   }
 }
 
-void LandingMissionController::onResponse(rclcpp::Client<RequestLanding>::SharedFuture future)
-{
+void LandingMissionController::onResponse(
+    rclcpp::Client<RequestLanding>::SharedFuture future) {
   if (policy_.state() != MissionState::REQUESTING) {
     pending_request_id_ = -1;
     return;
@@ -146,15 +162,16 @@ void LandingMissionController::onResponse(rclcpp::Client<RequestLanding>::Shared
   pending_request_id_ = -1;
   const auto response = future.get();
   const auto before = policy_.state();
-  policy_.receiveDecision(response->granted, response->owner_id, drone_id_, response->mission_id);
+  policy_.receiveDecision(response->granted, response->owner_id, drone_id_,
+                          response->mission_id);
   RCLCPP_INFO(get_logger(), "Landing response: granted=%s owner='%s' mission=%llu reason='%s'",
               response->granted ? "true" : "false", response->owner_id.c_str(),
-              static_cast<unsigned long long>(response->mission_id), response->reason.c_str());
+              static_cast<unsigned long long>(response->mission_id),
+              response->reason.c_str());
   logTransition(before);
 }
 
-void LandingMissionController::logTransition(MissionState before) const
-{
+void LandingMissionController::logTransition(MissionState before) const {
   if (before != policy_.state()) {
     RCLCPP_INFO(get_logger(), "Mission state: %s -> %s", stateName(before),
                 stateName(policy_.state()));

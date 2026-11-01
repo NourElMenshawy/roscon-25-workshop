@@ -1,16 +1,16 @@
+#include "landing_mission_controller/landing_mission_controller.hpp"
+
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <landing_coordinator/srv/request_landing.hpp>
+#include <landing_coordinator/msg/landing_status.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/executors/single_threaded_executor.hpp>
 #include <gtest/gtest.h>
 
 #include <chrono>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include <landing_coordinator/msg/landing_status.hpp>
-#include <landing_coordinator/srv/request_landing.hpp>
 #include <memory>
-#include <rclcpp/executors/single_threaded_executor.hpp>
-#include <rclcpp/rclcpp.hpp>
 #include <string>
 #include <thread>
-
-#include "landing_mission_controller/landing_mission_controller.hpp"
 
 using landing_mission_controller::LandingMissionController;
 using landing_mission_controller::MissionState;
@@ -18,21 +18,23 @@ using RequestLanding = landing_coordinator::srv::RequestLanding;
 using namespace std::chrono_literals;
 
 class ControllerIntegrationTest : public ::testing::Test {
- protected:
+protected:
   static void SetUpTestSuite() { rclcpp::init(0, nullptr); }
   static void TearDownTestSuite() { rclcpp::shutdown(); }
 };
 
 namespace {
 
-rclcpp::NodeOptions optionsFor(const std::string& id, const std::string& topic, int delay_ms)
-{
+rclcpp::NodeOptions optionsFor(const std::string& id,
+                               const std::string& topic, int delay_ms) {
   rclcpp::NodeOptions options;
   options.parameter_overrides({
       rclcpp::Parameter("drone_id", id),
       rclcpp::Parameter("target_topic", topic),
-      rclcpp::Parameter("coordinator_service", "/test_landing_mission_coordinator/request_landing"),
-      rclcpp::Parameter("status_topic", "/test_landing_mission_coordinator/status"),
+      rclcpp::Parameter("coordinator_service",
+                        "/test_landing_mission_coordinator/request_landing"),
+      rclcpp::Parameter("status_topic",
+                        "/test_landing_mission_coordinator/status"),
       rclcpp::Parameter("request_delay_ms", delay_ms),
       rclcpp::Parameter("observation_timeout_ms", 1500),
       rclcpp::Parameter("response_timeout_ms", 3000),
@@ -40,8 +42,8 @@ rclcpp::NodeOptions optionsFor(const std::string& id, const std::string& topic, 
   return options;
 }
 
-void runArbitrationScenario(int a_delay_ms, int b_delay_ms, const std::string& expected_owner)
-{
+void runArbitrationScenario(int a_delay_ms, int b_delay_ms,
+                            const std::string& expected_owner) {
   auto server = std::make_shared<rclcpp::Node>("fake_coordinator");
   std::string owner;
   int requests = 0;
@@ -65,10 +67,10 @@ void runArbitrationScenario(int a_delay_ms, int b_delay_ms, const std::string& e
   auto b = std::make_shared<LandingMissionController>(
       optionsFor("drone_b", "/test/drone_b/target_pose", b_delay_ms));
   auto pub = std::make_shared<rclcpp::Node>("mock_observations");
-  auto pub_a = pub->create_publisher<geometry_msgs::msg::PoseStamped>("/test/drone_a/target_pose",
-                                                                      rclcpp::QoS(1).best_effort());
-  auto pub_b = pub->create_publisher<geometry_msgs::msg::PoseStamped>("/test/drone_b/target_pose",
-                                                                      rclcpp::QoS(1).best_effort());
+  auto pub_a = pub->create_publisher<geometry_msgs::msg::PoseStamped>(
+      "/test/drone_a/target_pose", rclcpp::QoS(1).best_effort());
+  auto pub_b = pub->create_publisher<geometry_msgs::msg::PoseStamped>(
+      "/test/drone_b/target_pose", rclcpp::QoS(1).best_effort());
 
   rclcpp::executors::SingleThreadedExecutor executor;
   executor.add_node(server);
@@ -82,8 +84,10 @@ void runArbitrationScenario(int a_delay_ms, int b_delay_ms, const std::string& e
 
   const auto end = std::chrono::steady_clock::now() + 4s;
   while (std::chrono::steady_clock::now() < end &&
-         (a->state() == MissionState::SEARCHING || a->state() == MissionState::WAITING_TO_REQUEST ||
-          a->state() == MissionState::REQUESTING || b->state() == MissionState::SEARCHING ||
+         (a->state() == MissionState::SEARCHING ||
+          a->state() == MissionState::WAITING_TO_REQUEST ||
+          a->state() == MissionState::REQUESTING ||
+          b->state() == MissionState::SEARCHING ||
           b->state() == MissionState::WAITING_TO_REQUEST ||
           b->state() == MissionState::REQUESTING)) {
     observation.header.stamp = pub->now();
@@ -93,10 +97,10 @@ void runArbitrationScenario(int a_delay_ms, int b_delay_ms, const std::string& e
     std::this_thread::sleep_for(10ms);
   }
 
-  const auto a_expected =
-      expected_owner == "drone_a" ? MissionState::PRIMARY : MissionState::FOLLOWER;
-  const auto b_expected =
-      expected_owner == "drone_b" ? MissionState::PRIMARY : MissionState::FOLLOWER;
+  const auto a_expected = expected_owner == "drone_a" ? MissionState::PRIMARY
+                                                      : MissionState::FOLLOWER;
+  const auto b_expected = expected_owner == "drone_b" ? MissionState::PRIMARY
+                                                      : MissionState::FOLLOWER;
   EXPECT_EQ(a->state(), a_expected);
   EXPECT_EQ(b->state(), b_expected);
   EXPECT_EQ(a->missionId(), 1u);
@@ -107,20 +111,17 @@ void runArbitrationScenario(int a_delay_ms, int b_delay_ms, const std::string& e
 
 }  // namespace
 
-TEST_F(ControllerIntegrationTest, DroneAWins)
-{
+TEST_F(ControllerIntegrationTest, DroneAWins) {
   runArbitrationScenario(50, 800, "drone_a");
 }
 
-TEST_F(ControllerIntegrationTest, DroneBWins)
-{
+TEST_F(ControllerIntegrationTest, DroneBWins) {
   runArbitrationScenario(800, 50, "drone_b");
 }
 
-TEST_F(ControllerIntegrationTest, InvalidMarkerDoesNotRequest)
-{
-  auto node =
-      std::make_shared<LandingMissionController>(optionsFor("drone_b", "/test/invalid_marker", 10));
+TEST_F(ControllerIntegrationTest, InvalidMarkerDoesNotRequest) {
+  auto node = std::make_shared<LandingMissionController>(
+      optionsFor("drone_b", "/test/invalid_marker", 10));
   auto publisher_node = std::make_shared<rclcpp::Node>("publish_bad_marker");
   auto publisher = publisher_node->create_publisher<geometry_msgs::msg::PoseStamped>(
       "/test/invalid_marker", rclcpp::QoS(1).best_effort());
@@ -138,12 +139,12 @@ TEST_F(ControllerIntegrationTest, InvalidMarkerDoesNotRequest)
   EXPECT_EQ(node->state(), MissionState::SEARCHING);
 }
 
-TEST_F(ControllerIntegrationTest, StatusAssignsBothRolesWhenOnlyOneSeesMarker)
-{
+TEST_F(ControllerIntegrationTest, StatusAssignsBothRolesWhenOnlyOneSeesMarker) {
   using Status = landing_coordinator::msg::LandingStatus;
   auto coordinator = std::make_shared<rclcpp::Node>("test_status_coordinator");
   auto status_pub = coordinator->create_publisher<Status>(
-      "/test_landing_mission_coordinator/status", rclcpp::QoS(1).reliable().transient_local());
+      "/test_landing_mission_coordinator/status",
+      rclcpp::QoS(1).reliable().transient_local());
   auto a = std::make_shared<LandingMissionController>(
       optionsFor("drone_a", "/test/drone_a/target_pose", 50));
   auto b = std::make_shared<LandingMissionController>(
@@ -183,12 +184,12 @@ TEST_F(ControllerIntegrationTest, StatusAssignsBothRolesWhenOnlyOneSeesMarker)
   EXPECT_EQ(b->missionId(), 7u);
 }
 
-TEST_F(ControllerIntegrationTest, CompletionStatusAdvancesOnlyLogicalFollowerState)
-{
+TEST_F(ControllerIntegrationTest, CompletionStatusAdvancesOnlyLogicalFollowerState) {
   using Status = landing_coordinator::msg::LandingStatus;
   auto coordinator = std::make_shared<rclcpp::Node>("test_completion_status_coordinator");
   auto status_pub = coordinator->create_publisher<Status>(
-      "/test_landing_mission_coordinator/status", rclcpp::QoS(1).reliable().transient_local());
+      "/test_landing_mission_coordinator/status",
+      rclcpp::QoS(1).reliable().transient_local());
   auto a = std::make_shared<LandingMissionController>(
       optionsFor("drone_a", "/test/drone_a/completion_target", 50));
   auto b = std::make_shared<LandingMissionController>(
@@ -217,7 +218,8 @@ TEST_F(ControllerIntegrationTest, CompletionStatusAdvancesOnlyLogicalFollowerSta
   status_pub->publish(completed);
   deadline = std::chrono::steady_clock::now() + 3s;
   while (std::chrono::steady_clock::now() < deadline &&
-         (a->state() != MissionState::LANDED || b->state() != MissionState::READY_FOR_SELECTION)) {
+         (a->state() != MissionState::LANDED ||
+          b->state() != MissionState::READY_FOR_SELECTION)) {
     executor.spin_some();
     std::this_thread::sleep_for(10ms);
   }
@@ -231,4 +233,38 @@ TEST_F(ControllerIntegrationTest, CompletionStatusAdvancesOnlyLogicalFollowerSta
     std::this_thread::sleep_for(10ms);
   }
   EXPECT_EQ(b->state(), MissionState::READY_FOR_SELECTION);
+}
+
+TEST_F(ControllerIntegrationTest, MarkerCannotRequestUntilApproachReady)
+{
+  auto options = optionsFor("drone_a", "/test/gated_target", 10);
+  options.append_parameter_override("require_approach_ready", true);
+  options.append_parameter_override("approach_ready_topic", "/test/approach_ready");
+  auto controller = std::make_shared<LandingMissionController>(options);
+  auto pub_node = std::make_shared<rclcpp::Node>("gated_observation_pub");
+  auto target_pub = pub_node->create_publisher<geometry_msgs::msg::PoseStamped>(
+      "/test/gated_target", rclcpp::QoS(1).best_effort());
+  auto ready_pub = pub_node->create_publisher<std_msgs::msg::Bool>(
+      "/test/approach_ready", rclcpp::QoS(1).reliable().transient_local());
+  rclcpp::executors::SingleThreadedExecutor executor;
+  executor.add_node(controller);
+  executor.add_node(pub_node);
+  geometry_msgs::msg::PoseStamped observation;
+  observation.pose.position.z = 3.0;
+  observation.pose.orientation.w = 1.0;
+  for (int i = 0; i < 20; ++i) {
+    target_pub->publish(observation);
+    executor.spin_some();
+    std::this_thread::sleep_for(10ms);
+  }
+  EXPECT_EQ(controller->state(), MissionState::SEARCHING);
+  std_msgs::msg::Bool ready;
+  ready.data = true;
+  ready_pub->publish(ready);
+  for (int i = 0; i < 20; ++i) {
+    target_pub->publish(observation);
+    executor.spin_some();
+    std::this_thread::sleep_for(10ms);
+  }
+  EXPECT_NE(controller->state(), MissionState::SEARCHING);
 }

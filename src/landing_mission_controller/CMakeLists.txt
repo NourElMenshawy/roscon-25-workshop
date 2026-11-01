@@ -16,6 +16,7 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(geometry_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(landing_coordinator REQUIRED)
 
 # ============================================================
@@ -48,6 +49,7 @@ target_link_libraries(landing_mission_controller_lib PUBLIC
   landing_mission_policy
   rclcpp::rclcpp
   ${geometry_msgs_TARGETS}
+  ${std_msgs_TARGETS}
   ${landing_coordinator_TARGETS}
 )
 

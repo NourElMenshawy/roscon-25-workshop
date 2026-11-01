@@ -134,6 +134,8 @@ install(DIRECTORY cfg
 
 if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_approach_route test/test_approach_route.cpp)
+  target_include_directories(test_approach_route PRIVATE include)
   ament_add_gtest(test_landing_strategy test/test_landing_strategy.cpp)
   target_include_directories(test_landing_strategy PRIVATE include)
 
