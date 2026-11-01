@@ -39,9 +39,16 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
       "fmu/out/vehicle_land_detected", rclcpp::QoS(1).best_effort(),
       [this](VehicleLandDetected::ConstSharedPtr event) { onVehicleLandDetected(event); });
 
+  // PX4 1.18 publishes VehicleStatus MESSAGE_VERSION=4 on this topic.
+  // This subscription remains active even when PX4 deactivates our mode executor.
   _vehicle_status_sub = ros_node.create_subscription<VehicleStatus>(
       "fmu/out/vehicle_status_v4", rclcpp::QoS(5).best_effort(),
       [this](VehicleStatus::ConstSharedPtr status) { onVehicleStatus(status); });
+
+  // Diagnostic-only output: this topic is NOT consumed as a PX4 mode command.
+  _strategy_pub = ros_node.create_publisher<std_msgs::msg::String>(
+      "landing_strategy/decision", rclcpp::QoS(1).reliable().transient_local());
+
   _completion_client =
       ros_node.create_client<ReportLandingComplete>("/landing_coordinator/report_landing_complete");
 
@@ -58,6 +65,7 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
   _activation_timer = ros_node.create_wall_timer(std::chrono::milliseconds(200), [this] {
     tryActivatePrimary();
     tryReportCompletion();
+    pollFollowerSelection();
   });
 
   RCLCPP_INFO(ros_node.get_logger(),
@@ -75,6 +83,7 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status)
                   static_cast<unsigned long long>(_mission_id));
     }
     _authorized_primary = false;
+    _follower_selector.cancel();
     return;
   }
 
@@ -93,6 +102,7 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status)
   }
 
   if (status->mission_id != _mission_id) {
+    _follower_selector.cancel();
     _activation_requested = false;
     _completion_acknowledged = false;
     _mission_completed_observed = false;
@@ -109,11 +119,15 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status)
   _current_owner = status->owner_id;
 
   if (status->state == LandingStatus::COMPLETED) {
+    const bool first_completion_notice = !_mission_completed_observed;
     _mission_completed_observed = true;
     _authorized_primary = false;
     _completion_acknowledged = _current_owner == _drone_id;
     RCLCPP_INFO(node().get_logger(), "Mission %llu completed by %s; no further activation",
                 static_cast<unsigned long long>(_mission_id), _current_owner.c_str());
+    if (first_completion_notice && _current_owner != _drone_id) {
+      startFollowerSelection();
+    }
     return;
   }
 
@@ -216,6 +230,8 @@ void CustomModeExecutor::onActivate()
 
 void CustomModeExecutor::onDeactivate(DeactivateReason reason)
 {
+  // PX4 may deactivate this executor as part of a normal landing/disarm.
+  // Preserve mission evidence: VehicleStatus may arrive after this callback.
   if (_precision_started && reason == DeactivateReason::FailsafeActivated) {
     _failsafe_observed = true;
   }
@@ -254,12 +270,14 @@ void CustomModeExecutor::switchToState(State state, px4_ros2::Result previous_re
     case State::WaitUntilDisarmed:
       _precision_succeeded = true;  // The precision mode itself returned success.
       waitUntilDisarmed([this](px4_ros2::Result result) {
+        // 'Deactivated' is possible during normal PX4 auto-disarming, so
+        // do not infer success or failure from this callback alone.
         RCLCPP_INFO(node().get_logger(),
                     "Precision landing disarm wait: %s (touchdown=%s); "
                     "awaiting independent PX4 landing-disarm confirmation",
                     resultToString(result), _touchdown_confirmed ? "true" : "false");
-        // PX4 touchdown may arrive before or after the disarm callback.
-        // The wall timer reports only when ALL checks are satisfied.
+        // The wall timer reports only after mode success, observed touchdown,
+        // and VehicleStatus confirms disarming by landing.
       });
       break;
     case State::Idle:
@@ -289,6 +307,10 @@ void CustomModeExecutor::onVehicleStatus(VehicleStatus::ConstSharedPtr status)
     return;
   }
   _last_vehicle_status_us = status->timestamp;
+  _vehicle_failsafe_active = status->failsafe;
+  if (_vehicle_failsafe_active) {
+    _follower_selector.cancel();
+  }
 
   if (!_precision_started || _completion_acknowledged ||
       status->timestamp <= _activation_status_floor_us) {
@@ -387,6 +409,70 @@ void CustomModeExecutor::onCompletionResponse(
     RCLCPP_ERROR(node().get_logger(), "Landing completion response failed: %s", e.what());
     // Transient errors retry on the next timer tick; requests are idempotent.
   }
+}
+
+void CustomModeExecutor::startFollowerSelection()
+{
+  // The coordinator confirms the primary completed, but does NOT grant a
+  // second landing site. Live capabilities therefore fail closed.
+  precision_land_executor::StrategySnapshot snapshot{};
+  snapshot.mission_id = _mission_id;
+  snapshot.aruco_fresh = _last_valid_target && Clock::now() - *_last_valid_target <=
+                                                   std::chrono::milliseconds(_target_freshness_ms);
+  snapshot.vehicle_failsafe = _vehicle_failsafe_active;
+
+  // Deliberately false until implemented and independently verified:
+  //  - no shared position transformed into this PX4 vehicle's local frame,
+  //  - no unoccupied secondary landing site has been authorized,
+  //  - no separate visual landing estimator has been validated.
+  snapshot.shared_position_available = false;
+  snapshot.shared_position_frame_valid = false;
+  snapshot.position_site_verified = false;
+  snapshot.aruco_site_verified = false;
+  snapshot.visual_estimator_ready = false;
+  snapshot.visual_site_verified = false;
+
+  if (!_follower_selector.start(snapshot)) {
+    RCLCPP_ERROR(node().get_logger(), "Cannot schedule follower selection mission=%llu; SAFE_HOLD",
+                 static_cast<unsigned long long>(_mission_id));
+  } else {
+    RCLCPP_INFO(node().get_logger(),
+                "Follower selection scheduled with stdexec::when_all mission=%llu",
+                static_cast<unsigned long long>(_mission_id));
+  }
+}
+
+void CustomModeExecutor::pollFollowerSelection()
+{
+  auto result = _follower_selector.takeResult();
+  if (!result) {
+    return;
+  }
+
+  // Results are applied only on the ROS executor thread. Ignore work from an
+  // old mission, an obsolete role, or a subsequent PX4 failsafe.
+  if (!_mission_completed_observed || _mission_id != result->mission_id ||
+      _current_owner == _drone_id || _vehicle_failsafe_active) {
+    RCLCPP_WARN(node().get_logger(), "Discarding obsolete follower decision");
+    return;
+  }
+
+  std_msgs::msg::String message;
+  message.data = std::string{"mission="} + std::to_string(result->mission_id) +
+                 " strategy=" + precision_land_executor::toString(result->strategy);
+  _strategy_pub->publish(message);
+
+  RCLCPP_INFO(node().get_logger(),
+              "Follower decision mission=%llu selected=%s outcome=%s "
+              "position=%s aruco=%s visual=%s (decision-only; PX4 unchanged)",
+              static_cast<unsigned long long>(result->mission_id),
+              precision_land_executor::toString(result->strategy),
+              result->outcome == precision_land_executor::SelectionOutcome::Selected
+                  ? "selected"
+                  : "error_safe_hold",
+              precision_land_executor::toString(result->position.reason),
+              precision_land_executor::toString(result->aruco.reason),
+              precision_land_executor::toString(result->visual.reason));
 }
 
 int main(int argc, char* argv[])

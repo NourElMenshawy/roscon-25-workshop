@@ -22,6 +22,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(landing_coordinator REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(Threads REQUIRED)
 find_package(TBB REQUIRED)
 
@@ -56,6 +57,23 @@ target_compile_features(stdexec_headers
 )
 
 # ============================================================
+# Follower stdexec strategy selection (ROS-independent policy)
+# ============================================================
+
+add_library(follower_strategy_selector STATIC
+  src/follower_strategy_selector.cpp
+)
+
+target_include_directories(follower_strategy_selector PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(follower_strategy_selector PUBLIC
+  stdexec_headers
+)
+
+# ============================================================
 # PX4 Precision Landing executable
 # ============================================================
 
@@ -71,6 +89,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   ${geometry_msgs_TARGETS}
   ${px4_msgs_TARGETS}
   ${landing_coordinator_TARGETS}
+  ${std_msgs_TARGETS}
+  follower_strategy_selector
   tf2_ros::tf2_ros
   tf2::tf2
   stdexec_headers
@@ -111,6 +131,15 @@ install(DIRECTORY cfg
 # ============================================================
 
 if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_landing_strategy test/test_landing_strategy.cpp)
+  target_include_directories(test_landing_strategy PRIVATE include)
+
+  ament_add_gtest(test_follower_strategy_selector
+    test/test_follower_strategy_selector.cpp)
+  target_link_libraries(test_follower_strategy_selector
+    follower_strategy_selector)
+
   find_package(ament_lint_auto REQUIRED)
 
   set(ament_cmake_cpplint_FOUND TRUE)

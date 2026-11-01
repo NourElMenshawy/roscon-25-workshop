@@ -81,7 +81,7 @@ class PrecisionLand : public px4_ros2::ModeBase {
     Eigen::Quaterniond orientation;
     rclcpp::Time timestamp;
 
-    bool valid() { return timestamp.nanoseconds() > 0; };
+    bool valid() { return timestamp.nanoseconds() > 0; }
   };
 
   struct PoseSnapshot {

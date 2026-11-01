@@ -13,9 +13,11 @@
 #include <px4_ros2/components/mode_executor.hpp>
 #include <px4_ros2/components/node_with_mode.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/string.hpp>
 #include <string>
 
 #include "CustomMode_v2.hpp"
+#include "precision_land_executor/follower_strategy_selector.hpp"
 
 class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
  public:
@@ -44,6 +46,8 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   void tryReportCompletion();
   void onCompletionResponse(rclcpp::Client<ReportLandingComplete>::SharedFuture future);
   void tryActivatePrimary();
+  void startFollowerSelection();
+  void pollFollowerSelection();
   void switchToState(State state, px4_ros2::Result previous_result);
 
   px4_ros2::ModeBase& _second_mode;
@@ -64,6 +68,7 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   bool _observed_armed{false};
   bool _landing_disarm_confirmed{false};
   bool _failsafe_observed{false};
+  bool _vehicle_failsafe_active{false};
   // PX4 monotonic microsecond timestamps avoid accepting out-of-order status.
   std::uint64_t _last_vehicle_status_us{0};
   std::uint64_t _activation_status_floor_us{0};
@@ -84,4 +89,6 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   rclcpp::Subscription<VehicleStatus>::SharedPtr _vehicle_status_sub;
   rclcpp::Client<ReportLandingComplete>::SharedPtr _completion_client;
   rclcpp::TimerBase::SharedPtr _activation_timer;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr _strategy_pub;
+  precision_land_executor::FollowerStrategySelector _follower_selector;
 };
