@@ -33,6 +33,9 @@ def _launch_setup(context):
                         'approach_enabled': ParameterValue(
                             LaunchConfiguration('approach_enabled'), value_type=bool
                         ),
+                        'enable_position_landing': ParameterValue(
+                            LaunchConfiguration('enable_position_landing'), value_type=bool
+                        ),
                         'approach_world_frame': 'map',
                         'approach_local_frame': f'px4_{index}/odom_ned',
                         'approach_arrival_radius_m': 0.75,
@@ -61,6 +64,7 @@ def generate_launch_description():
         'num_vehicles': '2',
         'enable_auto_switch': 'false',
         'approach_enabled': 'false',
+        'enable_position_landing': 'false',
         'site_frame_id': 'map',
         'site_separation_margin_m': '2.0',
     }

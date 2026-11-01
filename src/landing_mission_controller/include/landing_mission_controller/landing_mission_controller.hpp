@@ -7,6 +7,7 @@
 #include <landing_coordinator/srv/request_landing.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/u_int64.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -30,6 +31,7 @@ private:
   static bool isValidObservation(const geometry_msgs::msg::PoseStamped& observation);
   void onObservation(geometry_msgs::msg::PoseStamped::ConstSharedPtr observation);
   void onStatus(LandingStatus::ConstSharedPtr status);
+  void onSecondaryLanding(std_msgs::msg::UInt64::ConstSharedPtr message);
   void onTimer();
   void requestLanding();
   void onResponse(rclcpp::Client<RequestLanding>::SharedFuture future);
@@ -52,6 +54,7 @@ private:
 
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr target_sub_;
   rclcpp::Subscription<LandingStatus>::SharedPtr status_sub_;
+  rclcpp::Subscription<std_msgs::msg::UInt64>::SharedPtr secondary_landed_sub_;
   rclcpp::Client<RequestLanding>::SharedPtr client_;
   rclcpp::TimerBase::SharedPtr timer_;
 };

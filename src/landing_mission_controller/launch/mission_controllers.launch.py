@@ -28,6 +28,7 @@ def generate_launch_description():
                     LaunchConfiguration('require_approach_ready'), value_type=bool
                 ),
                 'approach_ready_topic': '/px4_0/approach/ready',
+                'secondary_landed_topic': '/px4_0/landing_strategy/landed_mission',
                 "target_topic": LaunchConfiguration("drone_a_target_topic"),
                 "coordinator_service": coordinator,
                 "request_delay_ms": ParameterValue(
@@ -49,6 +50,7 @@ def generate_launch_description():
                     LaunchConfiguration('require_approach_ready'), value_type=bool
                 ),
                 'approach_ready_topic': '/px4_1/approach/ready',
+                'secondary_landed_topic': '/px4_1/landing_strategy/landed_mission',
                 "target_topic": LaunchConfiguration("drone_b_target_topic"),
                 "coordinator_service": coordinator,
                 "request_delay_ms": ParameterValue(

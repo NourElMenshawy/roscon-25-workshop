@@ -55,10 +55,31 @@ public:
   void onDeactivate() override;
   void updateSetpoint([[maybe_unused]] float dt_s) override;
 
+  // Only the executor may arm this mission-scoped alternate route after a
+  // verified, TF2-resolved site wins stdexec selection.
+  bool configureSecondaryLanding(std::uint64_t mission_id,
+                                 const Eigen::Vector3f& site_local_ned);
+  [[nodiscard]] bool secondaryLandingCompleted(std::uint64_t mission_id) const noexcept;
+
 private:
   void loadParameters();
   void onCoordinatorStatus(landing_coordinator::msg::LandingStatus::ConstSharedPtr status);
   bool resolveWorldWaypoints();
+  void onLandDetected(px4_msgs::msg::VehicleLandDetected::ConstSharedPtr event);
+
+  enum class SecondaryState { None, Pending, Approach, Descend, Finished, Aborted };
+  SecondaryState _secondary_state{SecondaryState::None};
+  std::uint64_t _secondary_mission_id{0};
+  Eigen::Vector3f _secondary_site_ned{Eigen::Vector3f::Zero()};
+  Eigen::Vector3f _secondary_stage_ned{Eigen::Vector3f::Zero()};
+  bool _secondary_observed_airborne{false};
+  bool _secondary_completed_sent{false};
+  double _secondary_stage_height_m{4.0};
+  double _secondary_arrival_radius_m{0.65};
+  double _secondary_abort_radius_m{1.5};
+  double _secondary_descent_velocity_mps{0.6};
+  rclcpp::Subscription<px4_msgs::msg::VehicleLandDetected>::SharedPtr
+      _secondary_land_detected_sub;
 
   bool _approach_enabled{false};
   bool _route_active{false};

@@ -19,6 +19,8 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
   // The owned CustomWaypoints mode declares these before the executor.
   ros_node.get_parameter("drone_id", _drone_id);
   ros_node.get_parameter("approach_enabled", _approach_enabled);
+  _enable_position_landing = ros_node.declare_parameter<bool>(
+      "enable_position_landing", false);
   _px4_system_id = ros_node.declare_parameter<int>("px4_system_id", 1);
   _enable_auto_switch = ros_node.declare_parameter<bool>("enable_auto_switch", false);
   _target_freshness_ms = ros_node.declare_parameter<int>("target_freshness_ms", 1500);
@@ -64,6 +66,8 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
   // Diagnostic-only output: this topic is NOT consumed as a PX4 mode command.
   _strategy_pub = ros_node.create_publisher<std_msgs::msg::String>(
       "landing_strategy/decision", rclcpp::QoS(1).reliable().transient_local());
+  _secondary_landed_pub = ros_node.create_publisher<std_msgs::msg::UInt64>(
+      "landing_strategy/landed_mission", rclcpp::QoS(1).reliable().transient_local());
 
   _completion_client = ros_node.create_client<ReportLandingComplete>(
       "/landing_coordinator/report_landing_complete");
@@ -95,6 +99,7 @@ CustomModeExecutor::CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
         tryReportCompletion();
         maybeStartFollowerSelection();
         pollFollowerSelection();
+        tryReportSecondaryLanding();
       });
 
   RCLCPP_INFO(ros_node.get_logger(),
@@ -137,6 +142,11 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status) {
   }
 
   if (status->mission_id != _mission_id) {
+    if (_secondary_started) {
+      RCLCPP_ERROR(node().get_logger(),
+                   "Ignoring new mission while secondary landing is in progress");
+      return;
+    }
     _follower_selector.cancel();
     _follower_selection_started = false;
     _tf_lookup_pending = false;
@@ -146,6 +156,7 @@ void CustomModeExecutor::onLandingStatus(LandingStatus::ConstSharedPtr status) {
       _site_catalog.reset();
     }
     _activation_requested = false;
+    _secondary_reported = false;
     _completion_acknowledged = false;
     _mission_completed_observed = false;
     // Never carry landing evidence across mission identifiers.
@@ -222,6 +233,9 @@ void CustomModeExecutor::onLandingSites(LandingSiteMap::ConstSharedPtr sites) {
   _site_catalog = std::move(catalog);
   if (_mission_completed_observed && _mission_id == _site_catalog->mission_id &&
       _current_owner == _site_catalog->owner_id && _current_owner != _drone_id) {
+    if (_secondary_started) {
+      return;
+    }
     // A late catalogue supersedes an earlier SAFE_HOLD evaluation. The
     // selector generation prevents stale worker results from being published.
     startFollowerSelection();
@@ -337,6 +351,16 @@ void CustomModeExecutor::onVehicleCommandAck(VehicleCommandAck::ConstSharedPtr a
 void CustomModeExecutor::onActivate() {
   RCLCPP_INFO(node().get_logger(), "CustomModeExecutor activated");
 
+  // This is a *different* landing operation after the PRIMARY has finished.
+  // It is armed only from a selected, verified secondary site.
+  if (_secondary_started && _mission_completed_observed &&
+      _current_owner != _drone_id && !_vehicle_failsafe_active) {
+    RCLCPP_INFO(node().get_logger(),
+                "Secondary position-landing mode activated mission=%llu",
+                static_cast<unsigned long long>(_mission_id));
+    return;
+  }
+
   // A competition approach is allowed before landing authorization.
   // Only the coordinator's PRIMARY grant can start PrecisionLandCustom.
   if (_approach_enabled && _mission_id == 0 && isArmed() && _route_airborne &&
@@ -367,7 +391,8 @@ void CustomModeExecutor::onActivate() {
 void CustomModeExecutor::onDeactivate(DeactivateReason reason) {
   // PX4 may deactivate this executor as part of a normal landing/disarm.
   // Preserve mission evidence: VehicleStatus may arrive after this callback.
-  if (_precision_started && reason == DeactivateReason::FailsafeActivated) {
+  if ((_precision_started || _secondary_started) &&
+      reason == DeactivateReason::FailsafeActivated) {
     _failsafe_observed = true;
   }
   _precision_scheduled = false;
@@ -424,7 +449,8 @@ void CustomModeExecutor::switchToState(State state, px4_ros2::Result previous_re
 void CustomModeExecutor::onVehicleLandDetected(
     VehicleLandDetected::ConstSharedPtr event) {
   _route_airborne = !event->landed;
-  if (!_precision_started || _completion_acknowledged) {
+  if ((!_precision_started && !_secondary_started) ||
+      (_precision_started && _completion_acknowledged) || _secondary_reported) {
     return;
   }
   // Require an airborne->landed observation during this particular activation;
@@ -448,7 +474,8 @@ void CustomModeExecutor::onVehicleStatus(VehicleStatus::ConstSharedPtr status) {
     _follower_selector.cancel();
   }
 
-  if (!_precision_started || _completion_acknowledged ||
+  if ((!_precision_started && !_secondary_started) ||
+      (_precision_started && _completion_acknowledged) || _secondary_reported ||
       status->timestamp <= _activation_status_floor_us) {
     return;
   }
@@ -552,7 +579,8 @@ void CustomModeExecutor::onCompletionResponse(
 }
 
 void CustomModeExecutor::maybeStartFollowerSelection() {
-  if (!_mission_completed_observed || _current_owner == _drone_id) {
+  if (_secondary_started || !_mission_completed_observed ||
+      _current_owner == _drone_id) {
     return;
   }
   if (!_follower_selection_started && _completion_seen_at &&
@@ -606,6 +634,9 @@ precision_land_executor::SiteEvaluation CustomModeExecutor::evaluateFollowerSite
 }
 
 void CustomModeExecutor::startFollowerSelection() {
+  if (_secondary_started) {
+    return;
+  }
   const bool already_started = _follower_selection_started;
   const auto site_result = evaluateFollowerSites();
   if (already_started && _tf_lookup_pending) {
@@ -660,7 +691,8 @@ void CustomModeExecutor::pollFollowerSelection() {
   // Results are applied only on the ROS executor thread. Ignore work from an
   // old mission, an obsolete role, or a subsequent PX4 failsafe.
   if (!_mission_completed_observed || _mission_id != result->mission_id ||
-      _current_owner == _drone_id || _vehicle_failsafe_active) {
+      _current_owner == _drone_id || _vehicle_failsafe_active ||
+      _secondary_started) {
     RCLCPP_WARN(node().get_logger(), "Discarding obsolete follower decision");
     return;
   }
@@ -672,7 +704,7 @@ void CustomModeExecutor::pollFollowerSelection() {
 
   RCLCPP_INFO(node().get_logger(),
               "Follower decision mission=%llu selected=%s outcome=%s "
-              "position=%s aruco=%s visual=%s (decision-only; PX4 unchanged)",
+              "position=%s aruco=%s visual=%s",
               static_cast<unsigned long long>(result->mission_id),
               precision_land_executor::toString(result->strategy),
               result->outcome == precision_land_executor::SelectionOutcome::Selected
@@ -680,6 +712,91 @@ void CustomModeExecutor::pollFollowerSelection() {
               precision_land_executor::toString(result->position.reason),
               precision_land_executor::toString(result->aruco.reason),
               precision_land_executor::toString(result->visual.reason));
+
+  if (_enable_position_landing &&
+      result->outcome == precision_land_executor::SelectionOutcome::Selected &&
+      result->strategy == precision_land_executor::LandingStrategy::Position) {
+    // Re-evaluate on the ROS thread: a worker's decision must never be used
+    // as a flight command without checking current mission/site/failsafe.
+    const auto site = evaluateFollowerSites();
+    if (site.reason == precision_land_executor::SiteRejection::Eligible) {
+      beginSecondaryPositionLanding(site);
+    } else {
+      RCLCPP_WARN(node().get_logger(),
+                  "Secondary landing rejected during execution recheck: %s",
+                  precision_land_executor::toString(site.reason));
+    }
+  }
+}
+
+void CustomModeExecutor::beginSecondaryPositionLanding(
+    const precision_land_executor::SiteEvaluation& site)
+{
+  const Eigen::Vector3f target(
+      static_cast<float>(site.local_position.x),
+      static_cast<float>(site.local_position.y),
+      static_cast<float>(site.local_position.z));
+  if (_secondary_started || !_mission_completed_observed ||
+      _current_owner == _drone_id || !_approach_enabled ||
+      !_enable_auto_switch || !isArmed() || !_route_airborne ||
+      _vehicle_failsafe_active || !target.allFinite() ||
+      site.reason != precision_land_executor::SiteRejection::Eligible ||
+      ownedMode().id() == px4_ros2::ModeBase::kModeIDInvalid ||
+      _command_pub->get_subscription_count() == 0) {
+    RCLCPP_WARN(node().get_logger(),
+                "Cannot begin follower POSITION_LANDING; retaining PX4 Hold");
+    return;
+  }
+
+  auto& waypoint_mode = static_cast<CustomWaypoints&>(ownedMode());
+  if (!waypoint_mode.configureSecondaryLanding(_mission_id, target)) {
+    RCLCPP_ERROR(node().get_logger(),
+                 "Cannot configure mission-scoped follower landing mode");
+    return;
+  }
+  _secondary_started = true;
+  _secondary_reported = false;
+  _observed_airborne = false;
+  _touchdown_confirmed = false;
+  _observed_armed = false;
+  _landing_disarm_confirmed = false;
+  _failsafe_observed = false;
+  _activation_status_floor_us = _last_vehicle_status_us;
+
+  VehicleCommand command{};
+  command.command = VehicleCommand::VEHICLE_CMD_SET_NAV_STATE;
+  command.param1 = static_cast<float>(ownedMode().id());
+  command.target_system = static_cast<std::uint8_t>(_px4_system_id);
+  command.target_component = 1;
+  command.source_system = 200;
+  command.source_component = 1;
+  command.from_external = true;
+  RCLCPP_INFO(node().get_logger(),
+              "Starting secondary position landing mission=%llu site=%s "
+              "local_ned=(%.2f, %.2f, %.2f)",
+              static_cast<unsigned long long>(_mission_id),
+              site.selected_site_id.c_str(),
+              target.x(), target.y(), target.z());
+  _command_pub->publish(command);
+}
+
+void CustomModeExecutor::tryReportSecondaryLanding()
+{
+  if (!_secondary_started || _secondary_reported ||
+      !_mission_completed_observed || _current_owner == _drone_id ||
+      !_touchdown_confirmed || !_landing_disarm_confirmed ||
+      _failsafe_observed || _vehicle_failsafe_active ||
+      !static_cast<CustomWaypoints&>(ownedMode()).secondaryLandingCompleted(_mission_id)) {
+    return;
+  }
+  _secondary_reported = true;
+  std_msgs::msg::UInt64 completed;
+  completed.data = _mission_id;
+  _secondary_landed_pub->publish(completed);
+  RCLCPP_INFO(node().get_logger(),
+              "SECONDARY POSITION_LANDING completed: touchdown and PX4 "
+              "landing-disarm confirmed mission=%llu drone=%s",
+              static_cast<unsigned long long>(_mission_id), _drone_id.c_str());
 }
 
 int main(int argc, char* argv[]) {

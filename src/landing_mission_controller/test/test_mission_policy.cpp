@@ -1,15 +1,14 @@
+#include "landing_mission_controller/mission_policy.hpp"
+
 #include <gtest/gtest.h>
 
 #include <chrono>
-
-#include "landing_mission_controller/mission_policy.hpp"
 
 using landing_mission_controller::MissionPolicy;
 using landing_mission_controller::MissionState;
 using namespace std::chrono_literals;
 
-TEST(MissionPolicyTest, RequiresTagBeforeRequest)
-{
+TEST(MissionPolicyTest, RequiresTagBeforeRequest) {
   MissionPolicy policy;
   const auto now = MissionPolicy::TimePoint{};
   EXPECT_FALSE(policy.readyToRequest(now + 200ms, 100ms, 1500ms));
@@ -19,8 +18,7 @@ TEST(MissionPolicyTest, RequiresTagBeforeRequest)
   EXPECT_TRUE(policy.readyToRequest(now + 100ms, 100ms, 1500ms));
 }
 
-TEST(MissionPolicyTest, StaleObservationResetsSearch)
-{
+TEST(MissionPolicyTest, StaleObservationResetsSearch) {
   MissionPolicy policy;
   const auto now = MissionPolicy::TimePoint{};
   policy.observeTag(now);
@@ -29,8 +27,7 @@ TEST(MissionPolicyTest, StaleObservationResetsSearch)
   EXPECT_FALSE(policy.readyToRequest(now + 1501ms, 100ms, 1500ms));
 }
 
-TEST(MissionPolicyTest, AcceptedRequestBecomesPrimary)
-{
+TEST(MissionPolicyTest, AcceptedRequestBecomesPrimary) {
   MissionPolicy policy;
   policy.observeTag(MissionPolicy::TimePoint{});
   policy.requestSent();
@@ -39,8 +36,7 @@ TEST(MissionPolicyTest, AcceptedRequestBecomesPrimary)
   EXPECT_EQ(policy.missionId(), 42u);
 }
 
-TEST(MissionPolicyTest, RejectedRequestBecomesFollower)
-{
+TEST(MissionPolicyTest, RejectedRequestBecomesFollower) {
   MissionPolicy policy;
   policy.observeTag(MissionPolicy::TimePoint{});
   policy.requestSent();
@@ -49,8 +45,7 @@ TEST(MissionPolicyTest, RejectedRequestBecomesFollower)
   EXPECT_EQ(policy.missionId(), 42u);
 }
 
-TEST(MissionPolicyTest, InvalidDecisionCannotAssignRole)
-{
+TEST(MissionPolicyTest, InvalidDecisionCannotAssignRole) {
   MissionPolicy policy;
   policy.observeTag(MissionPolicy::TimePoint{});
   policy.requestSent();
@@ -58,8 +53,7 @@ TEST(MissionPolicyTest, InvalidDecisionCannotAssignRole)
   EXPECT_EQ(policy.state(), MissionState::SEARCHING);
 }
 
-TEST(MissionPolicyTest, LateDecisionAfterTimeoutIsIgnored)
-{
+TEST(MissionPolicyTest, LateDecisionAfterTimeoutIsIgnored) {
   MissionPolicy policy;
   policy.observeTag(MissionPolicy::TimePoint{});
   policy.requestSent();
@@ -68,24 +62,21 @@ TEST(MissionPolicyTest, LateDecisionAfterTimeoutIsIgnored)
   EXPECT_EQ(policy.state(), MissionState::SEARCHING);
 }
 
-TEST(MissionPolicyTest, StatusAssignsFollowerWithoutTagDetection)
-{
+TEST(MissionPolicyTest, StatusAssignsFollowerWithoutTagDetection) {
   MissionPolicy policy;
   EXPECT_TRUE(policy.receiveStatus(1, "drone_a", "drone_b", 17));
   EXPECT_EQ(policy.state(), MissionState::FOLLOWER);
   EXPECT_EQ(policy.missionId(), 17u);
 }
 
-TEST(MissionPolicyTest, StatusAssignsPrimaryWithoutServiceResponse)
-{
+TEST(MissionPolicyTest, StatusAssignsPrimaryWithoutServiceResponse) {
   MissionPolicy policy;
   EXPECT_TRUE(policy.receiveStatus(1, "drone_b", "drone_b", 17));
   EXPECT_EQ(policy.state(), MissionState::PRIMARY);
   EXPECT_EQ(policy.missionId(), 17u);
 }
 
-TEST(MissionPolicyTest, ReservedStatusOverridesOutstandingRequest)
-{
+TEST(MissionPolicyTest, ReservedStatusOverridesOutstandingRequest) {
   MissionPolicy policy;
   policy.observeTag(MissionPolicy::TimePoint{});
   policy.requestSent();
@@ -97,8 +88,7 @@ TEST(MissionPolicyTest, ReservedStatusOverridesOutstandingRequest)
   EXPECT_EQ(policy.missionId(), 2u);
 }
 
-TEST(MissionPolicyTest, InitialAvailableCannotUndoReservation)
-{
+TEST(MissionPolicyTest, InitialAvailableCannotUndoReservation) {
   MissionPolicy policy;
   EXPECT_TRUE(policy.receiveStatus(0, "", "drone_b", 0));
   EXPECT_EQ(policy.state(), MissionState::SEARCHING);
@@ -107,8 +97,7 @@ TEST(MissionPolicyTest, InitialAvailableCannotUndoReservation)
   EXPECT_EQ(policy.state(), MissionState::FOLLOWER);
 }
 
-TEST(MissionPolicyTest, ConflictingAndStaleStatusIgnored)
-{
+TEST(MissionPolicyTest, ConflictingAndStaleStatusIgnored) {
   MissionPolicy policy;
   EXPECT_TRUE(policy.receiveStatus(1, "drone_a", "drone_b", 10));
   EXPECT_FALSE(policy.receiveStatus(1, "drone_b", "drone_b", 10));
@@ -117,8 +106,7 @@ TEST(MissionPolicyTest, ConflictingAndStaleStatusIgnored)
   EXPECT_EQ(policy.missionId(), 10u);
 }
 
-TEST(MissionPolicyTest, MalformedStatusIgnored)
-{
+TEST(MissionPolicyTest, MalformedStatusIgnored) {
   MissionPolicy policy;
   EXPECT_FALSE(policy.receiveStatus(1, "", "drone_b", 1));
   EXPECT_FALSE(policy.receiveStatus(1, "drone_a", "drone_b", 0));
@@ -128,8 +116,7 @@ TEST(MissionPolicyTest, MalformedStatusIgnored)
   EXPECT_EQ(policy.missionId(), 0u);
 }
 
-TEST(MissionPolicyTest, CompletedStatusAdvancesFollowerWithoutArUco)
-{
+TEST(MissionPolicyTest, CompletedStatusAdvancesFollowerWithoutArUco) {
   MissionPolicy follower;
   EXPECT_TRUE(follower.receiveStatus(1, "drone_a", "drone_b", 7));
   EXPECT_EQ(follower.state(), MissionState::FOLLOWER);
@@ -138,8 +125,7 @@ TEST(MissionPolicyTest, CompletedStatusAdvancesFollowerWithoutArUco)
   EXPECT_EQ(follower.missionId(), 7u);
 }
 
-TEST(MissionPolicyTest, CompletedStatusMarksPrimaryLanded)
-{
+TEST(MissionPolicyTest, CompletedStatusMarksPrimaryLanded) {
   MissionPolicy primary;
   EXPECT_TRUE(primary.receiveStatus(2, "drone_a", "drone_a", 1));
   EXPECT_EQ(primary.state(), MissionState::LANDED);
@@ -147,8 +133,7 @@ TEST(MissionPolicyTest, CompletedStatusMarksPrimaryLanded)
   EXPECT_EQ(primary.state(), MissionState::LANDED);
 }
 
-TEST(MissionPolicyTest, DelayedReservedCannotUndoCompletion)
-{
+TEST(MissionPolicyTest, DelayedReservedCannotUndoCompletion) {
   MissionPolicy follower;
   ASSERT_TRUE(follower.receiveStatus(1, "drone_a", "drone_b", 1));
   ASSERT_TRUE(follower.receiveStatus(2, "drone_a", "drone_b", 1));
@@ -156,4 +141,29 @@ TEST(MissionPolicyTest, DelayedReservedCannotUndoCompletion)
   EXPECT_FALSE(follower.receiveStatus(2, "drone_c", "drone_b", 1));
   EXPECT_FALSE(follower.receiveStatus(2, "drone_a", "drone_b", 0));
   EXPECT_EQ(follower.state(), MissionState::READY_FOR_SELECTION);
+}
+
+TEST(MissionPolicyTest, SecondaryLandingRequiresCurrentCompletedMission) {
+  MissionPolicy policy;
+  EXPECT_FALSE(policy.secondaryLandingComplete(5));
+  EXPECT_TRUE(policy.receiveStatus(1, "drone_b", "drone_a", 5));
+  EXPECT_FALSE(policy.secondaryLandingComplete(5));
+  EXPECT_TRUE(policy.receiveStatus(2, "drone_b", "drone_a", 5));
+  EXPECT_EQ(policy.state(), MissionState::READY_FOR_SELECTION);
+  EXPECT_FALSE(policy.secondaryLandingComplete(4));
+  EXPECT_TRUE(policy.secondaryLandingComplete(5));
+  EXPECT_EQ(policy.state(), MissionState::LANDED);
+  EXPECT_FALSE(policy.secondaryLandingComplete(5));
+  EXPECT_TRUE(policy.receiveStatus(2, "drone_b", "drone_a", 5));
+  EXPECT_EQ(policy.state(), MissionState::LANDED);
+}
+
+TEST(MissionPolicyTest, SecondaryLandingCannotOverridePrimaryOrNewMission) {
+  MissionPolicy policy;
+  EXPECT_TRUE(policy.receiveStatus(2, "drone_a", "drone_a", 1));
+  EXPECT_FALSE(policy.secondaryLandingComplete(1));
+  EXPECT_TRUE(policy.receiveStatus(2, "drone_b", "drone_a", 2));
+  EXPECT_EQ(policy.state(), MissionState::READY_FOR_SELECTION);
+  EXPECT_FALSE(policy.secondaryLandingComplete(1));
+  EXPECT_EQ(policy.state(), MissionState::READY_FOR_SELECTION);
 }

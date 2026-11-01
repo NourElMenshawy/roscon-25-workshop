@@ -19,6 +19,7 @@
 #include <tf2_ros/buffer.hpp>
 #include <tf2_ros/transform_listener.hpp>
 #include <std_msgs/msg/string.hpp>
+#include <std_msgs/msg/u_int64.hpp>
 #include <std_msgs/msg/bool.hpp>
 
 #include <chrono>
@@ -63,6 +64,8 @@ private:
   void startFollowerSelection();
   void maybeStartFollowerSelection();
   void pollFollowerSelection();
+  void beginSecondaryPositionLanding(const precision_land_executor::SiteEvaluation& site);
+  void tryReportSecondaryLanding();
   precision_land_executor::SiteEvaluation evaluateFollowerSites();
   void switchToState(State state, px4_ros2::Result previous_result);
 
@@ -72,6 +75,9 @@ private:
   int _px4_system_id{1};
   bool _enable_auto_switch{false};
   bool _approach_enabled{false};
+  bool _enable_position_landing{false};
+  bool _secondary_started{false};
+  bool _secondary_reported{false};
   bool _approach_activation_attempted{false};
   bool _route_airborne{false};
   bool _approach_ready{false};
@@ -120,6 +126,7 @@ private:
   rclcpp::Client<ReportLandingComplete>::SharedPtr _completion_client;
   rclcpp::TimerBase::SharedPtr _activation_timer;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr _strategy_pub;
+  rclcpp::Publisher<std_msgs::msg::UInt64>::SharedPtr _secondary_landed_pub;
   precision_land_executor::FollowerStrategySelector _follower_selector;
   std::shared_ptr<tf2_ros::Buffer> _tf_buffer;
   std::shared_ptr<tf2_ros::TransformListener> _tf_listener;

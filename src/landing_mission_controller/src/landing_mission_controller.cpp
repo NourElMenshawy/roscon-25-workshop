@@ -43,6 +43,13 @@ LandingMissionController::LandingMissionController(const rclcpp::NodeOptions& op
   status_sub_ = create_subscription<LandingStatus>(
       status_topic_, rclcpp::QoS(1).reliable().transient_local(),
       [this](LandingStatus::ConstSharedPtr status) { onStatus(std::move(status)); });
+  const auto secondary_landed_topic = declare_parameter<std::string>(
+      "secondary_landed_topic", "landing_strategy/landed_mission");
+  secondary_landed_sub_ = create_subscription<std_msgs::msg::UInt64>(
+      secondary_landed_topic, rclcpp::QoS(1).reliable().transient_local(),
+      [this](std_msgs::msg::UInt64::ConstSharedPtr message) {
+        onSecondaryLanding(message);
+      });
   target_sub_ = create_subscription<geometry_msgs::msg::PoseStamped>(
       target_topic_, rclcpp::QoS(1).best_effort(),
       [this](geometry_msgs::msg::PoseStamped::ConstSharedPtr observation) {
@@ -99,6 +106,16 @@ void LandingMissionController::onStatus(LandingStatus::ConstSharedPtr status) {
       client_->remove_pending_request(pending_request_id_);
       pending_request_id_ = -1;
     }
+  }
+  logTransition(before);
+}
+
+void LandingMissionController::onSecondaryLanding(
+    std_msgs::msg::UInt64::ConstSharedPtr message)
+{
+  const auto before = policy_.state();
+  if (!policy_.secondaryLandingComplete(message->data)) {
+    return;
   }
   logTransition(before);
 }

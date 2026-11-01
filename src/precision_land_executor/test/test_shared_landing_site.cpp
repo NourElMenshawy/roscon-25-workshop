@@ -160,3 +160,14 @@ TEST(SharedLandingSites, VerifiedTfResultEnablesPositionStrategy) {
                                       evaluateAruco(snapshot), evaluateVisual(snapshot));
   EXPECT_EQ(stopped.strategy, LandingStrategy::SafeHold);
 }
+
+TEST(SharedLandingSites, CompetitionWorldPadEnablesAlternativeLanding) {
+  auto input = catalog();
+  input.sites[0].center = {.x = 10.0, .y = 0.0, .z = 0.0};
+  input.sites[1].center = {.x = 0.0, .y = -10.0, .z = 0.0};
+  const auto evaluated = evaluate(&input, localSite());
+  EXPECT_EQ(evaluated.reason, SiteRejection::Eligible);
+  EXPECT_EQ(evaluated.selected_site_id, "secondary_position");
+  input.sites[1].verified = false;
+  EXPECT_EQ(evaluate(&input, localSite()).reason, SiteRejection::UnverifiedSite);
+}

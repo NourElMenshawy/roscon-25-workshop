@@ -21,6 +21,30 @@ CustomWaypoints::CustomWaypoints(rclcpp::Node &node)
   _local_position = std::make_shared<px4_ros2::OdometryLocalPosition>(*this);
 
   if (_approach_enabled) {
+    _secondary_stage_height_m = _node.declare_parameter<double>(
+        "secondary_stage_height_m", 4.0);
+    _secondary_arrival_radius_m = _node.declare_parameter<double>(
+        "secondary_arrival_radius_m", 0.65);
+    _secondary_abort_radius_m = _node.declare_parameter<double>(
+        "secondary_abort_radius_m", 1.5);
+    _secondary_descent_velocity_mps = _node.declare_parameter<double>(
+        "secondary_descent_velocity_mps", 0.6);
+    if (!std::isfinite(_secondary_stage_height_m) || _secondary_stage_height_m < 2.0 ||
+        !std::isfinite(_secondary_arrival_radius_m) ||
+        _secondary_arrival_radius_m <= 0.0 ||
+        !std::isfinite(_secondary_abort_radius_m) ||
+        _secondary_abort_radius_m <= _secondary_arrival_radius_m ||
+        !std::isfinite(_secondary_descent_velocity_mps) ||
+        _secondary_descent_velocity_mps <= 0.0 ||
+        _secondary_descent_velocity_mps > 1.0) {
+      throw std::invalid_argument("Invalid secondary position-landing parameters");
+    }
+    _secondary_land_detected_sub =
+        _node.create_subscription<px4_msgs::msg::VehicleLandDetected>(
+            "fmu/out/vehicle_land_detected", rclcpp::QoS(1).best_effort(),
+            [this](px4_msgs::msg::VehicleLandDetected::ConstSharedPtr event) {
+              onLandDetected(event);
+            });
     _ready_pub = _node.create_publisher<std_msgs::msg::Bool>(
         "approach/ready", rclcpp::QoS(1).reliable().transient_local());
     _coordinator_sub = _node.create_subscription<landing_coordinator::msg::LandingStatus>(
@@ -101,6 +125,7 @@ void CustomWaypoints::onCoordinatorStatus(
     landing_coordinator::msg::LandingStatus::ConstSharedPtr status)
 {
   if (!_approach_enabled || !_route_active || _route_frozen ||
+      _secondary_state != SecondaryState::None ||
       status->state == landing_coordinator::msg::LandingStatus::AVAILABLE) {
     return;
   }
@@ -114,8 +139,68 @@ void CustomWaypoints::onCoordinatorStatus(
   }
 }
 
+bool CustomWaypoints::configureSecondaryLanding(
+    std::uint64_t mission_id, const Eigen::Vector3f& site_local_ned)
+{
+  if (!_approach_enabled || mission_id == 0 ||
+      _secondary_state != SecondaryState::None ||
+      !site_local_ned.allFinite()) {
+    return false;
+  }
+  _secondary_mission_id = mission_id;
+  _secondary_site_ned = site_local_ned;
+  _secondary_completed_sent = false;
+  _secondary_observed_airborne = false;
+  _secondary_state = SecondaryState::Pending;
+  return true;
+}
+
+bool CustomWaypoints::secondaryLandingCompleted(std::uint64_t mission_id) const noexcept
+{
+  return _secondary_completed_sent && _secondary_mission_id == mission_id &&
+         _secondary_state == SecondaryState::Finished;
+}
+
+void CustomWaypoints::onLandDetected(
+    px4_msgs::msg::VehicleLandDetected::ConstSharedPtr event)
+{
+  if (_secondary_state != SecondaryState::Descend) {
+    return;
+  }
+  if (!event->landed) {
+    _secondary_observed_airborne = true;
+  } else if (_secondary_observed_airborne) {
+    _secondary_state = SecondaryState::Finished;
+    RCLCPP_INFO(_node.get_logger(),
+                "Secondary position landing: PX4 touchdown detected mission=%llu",
+                static_cast<unsigned long long>(_secondary_mission_id));
+  }
+}
+
 void CustomWaypoints::onActivate()
 {
+  if (_secondary_state == SecondaryState::Pending) {
+    // PX4's local NED frame uses negative Z for altitude. Maintain the
+    // vehicle's current flight height or climb to the minimum pad clearance.
+    const Eigen::Vector3f current = _local_position->positionNed();
+    _secondary_stage_ned = _secondary_site_ned;
+    _secondary_stage_ned.z() = std::min(
+        current.z(), _secondary_site_ned.z() -
+                         static_cast<float>(_secondary_stage_height_m));
+    _secondary_observed_airborne = false;
+    _secondary_state = SecondaryState::Approach;
+    _route_active = false;
+    if (_ready_pub) {
+      std_msgs::msg::Bool ready;
+      ready.data = false;
+      _ready_pub->publish(ready);
+    }
+    RCLCPP_INFO(_node.get_logger(),
+                "Secondary position landing: navigating to (%.2f, %.2f, %.2f) NED",
+                _secondary_stage_ned.x(), _secondary_stage_ned.y(),
+                _secondary_stage_ned.z());
+    return;
+  }
   _current_waypoint_index = 0;
   _route_active = true;
   _route_ready = false;
@@ -139,6 +224,13 @@ void CustomWaypoints::onActivate()
 
 void CustomWaypoints::onDeactivate()
 {
+  if (_secondary_state == SecondaryState::Approach ||
+      _secondary_state == SecondaryState::Descend ||
+      _secondary_state == SecondaryState::Pending) {
+    _secondary_state = SecondaryState::Aborted;
+    RCLCPP_WARN(_node.get_logger(),
+                "Secondary position landing interrupted before touchdown");
+  }
   _route_active = false;
   if (_approach_enabled && _ready_pub) {
     // A stale Transient Local ready=true must not authorize a new landing
@@ -152,6 +244,44 @@ void CustomWaypoints::onDeactivate()
 
 void CustomWaypoints::updateSetpoint([[maybe_unused]] float dt_s)
 {
+  if (_secondary_state == SecondaryState::Approach) {
+    _trajectory_setpoint->updatePosition(_secondary_stage_ned);
+    if ((_local_position->positionNed() - _secondary_stage_ned).norm() <
+        static_cast<float>(_secondary_arrival_radius_m)) {
+      _secondary_state = SecondaryState::Descend;
+      RCLCPP_INFO(_node.get_logger(),
+                  "Secondary position landing: over pad; starting controlled descent");
+    }
+    return;
+  }
+  if (_secondary_state == SecondaryState::Descend) {
+    const auto current = _local_position->positionNed();
+    const Eigen::Vector2f lateral_error = (_secondary_site_ned - current).head<2>();
+    if (lateral_error.norm() > static_cast<float>(_secondary_abort_radius_m)) {
+      _secondary_state = SecondaryState::Aborted;
+      RCLCPP_ERROR(_node.get_logger(),
+                   "Secondary position landing: horizontal drift beyond limit; aborting");
+      completed(px4_ros2::Result::ModeFailureOther);
+      return;
+    }
+    const Eigen::Vector2f velocity = 0.8f * lateral_error;
+    const Eigen::Vector2f bounded = velocity.cwiseMax(-0.7f).cwiseMin(0.7f);
+    _trajectory_setpoint->update(
+        Eigen::Vector3f(bounded.x(), bounded.y(),
+                        static_cast<float>(_secondary_descent_velocity_mps)),
+        std::nullopt, std::nullopt);
+    return;
+  }
+  if (_secondary_state == SecondaryState::Finished) {
+    if (!_secondary_completed_sent) {
+      _secondary_completed_sent = true;
+      completed(px4_ros2::Result::Success);
+    }
+    return;
+  }
+  if (_secondary_state == SecondaryState::Aborted) {
+    return;
+  }
   if (_approach_enabled) {
     if (_route_frozen) {
       _trajectory_setpoint->updatePosition(_frozen_position);
