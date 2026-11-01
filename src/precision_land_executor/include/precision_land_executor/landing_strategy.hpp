@@ -100,76 +100,46 @@ inline constexpr const char* toString(EligibilityReason value) noexcept
 inline constexpr Eligibility evaluatePosition(const StrategySnapshot& snapshot) noexcept
 {
   if (snapshot.vehicle_failsafe) {
-    return
-    {
-      false, EligibilityReason::Failsafe
-    }
+    return {.eligible = false, .reason = EligibilityReason::Failsafe};
   }
   if (!snapshot.shared_position_available) {
-    return
-    {
-      false, EligibilityReason::MissingTarget
-    }
+    return {.eligible = false, .reason = EligibilityReason::MissingTarget};
   }
   if (!snapshot.shared_position_frame_valid) {
-    return
-    {
-      false, EligibilityReason::InvalidFrame
-    }
+    return {.eligible = false, .reason = EligibilityReason::InvalidFrame};
   }
   if (!snapshot.position_site_verified) {
-    return
-    {
-      false, EligibilityReason::UnverifiedSite
-    }
+    return {.eligible = false, .reason = EligibilityReason::UnverifiedSite};
   }
-  return {true, EligibilityReason::Eligible};
+  return {.eligible = true, .reason = EligibilityReason::Eligible};
 }
 
 inline constexpr Eligibility evaluateAruco(const StrategySnapshot& snapshot) noexcept
 {
   if (snapshot.vehicle_failsafe) {
-    return
-    {
-      false, EligibilityReason::Failsafe
-    }
+    return {.eligible = false, .reason = EligibilityReason::Failsafe};
   }
   if (!snapshot.aruco_fresh) {
-    return
-    {
-      false, EligibilityReason::StaleTarget
-    }
+    return {.eligible = false, .reason = EligibilityReason::StaleTarget};
   }
   if (!snapshot.aruco_site_verified) {
-    return
-    {
-      false, EligibilityReason::UnverifiedSite
-    }
+    return {.eligible = false, .reason = EligibilityReason::UnverifiedSite};
   }
-  return {true, EligibilityReason::Eligible};
+  return {.eligible = true, .reason = EligibilityReason::Eligible};
 }
 
 inline constexpr Eligibility evaluateVisual(const StrategySnapshot& snapshot) noexcept
 {
   if (snapshot.vehicle_failsafe) {
-    return
-    {
-      false, EligibilityReason::Failsafe
-    }
+    return {.eligible = false, .reason = EligibilityReason::Failsafe};
   }
   if (!snapshot.visual_estimator_ready) {
-    return
-    {
-      false, EligibilityReason::NotImplemented
-    }
+    return {.eligible = false, .reason = EligibilityReason::NotImplemented};
   }
   if (!snapshot.visual_site_verified) {
-    return
-    {
-      false, EligibilityReason::UnverifiedSite
-    }
+    return {.eligible = false, .reason = EligibilityReason::UnverifiedSite};
   }
-  return {true, EligibilityReason::Eligible};
+  return {.eligible = true, .reason = EligibilityReason::Eligible};
 }
 
 // Deterministic priority policy; *always* fail closed if the vehicle is in

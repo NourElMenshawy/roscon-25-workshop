@@ -11,61 +11,31 @@ from launch.substitutions import LaunchConfiguration
 
 def _create_px4_vehicle_actions(context):
     px4_autopilot_path = Path(
-        LaunchConfiguration(
-            "px4_autopilot_path"
-        ).perform(context)
+        LaunchConfiguration('px4_autopilot_path').perform(context)
     ).expanduser()
 
-    px4_instance = int(
-        LaunchConfiguration(
-            "px4_instance"
-        ).perform(context)
-    )
+    px4_instance = int(LaunchConfiguration('px4_instance').perform(context))
 
-    px4_ns = LaunchConfiguration(
-        "px4_ns"
-    ).perform(context)
+    px4_ns = LaunchConfiguration('px4_ns').perform(context)
 
-    world = LaunchConfiguration(
-        "world"
-    ).perform(context)
+    world = LaunchConfiguration('world').perform(context)
 
-    model = LaunchConfiguration(
-        "model"
-    ).perform(context)
+    model = LaunchConfiguration('model').perform(context)
 
-    px4_autostart_id = LaunchConfiguration(
-        "px4_autostart_id"
-    ).perform(context)
+    px4_autostart_id = LaunchConfiguration('px4_autostart_id').perform(context)
 
-    xrce_agent_port = LaunchConfiguration(
-        "xrce_agent_port"
-    ).perform(context)
+    xrce_agent_port = LaunchConfiguration('xrce_agent_port').perform(context)
 
-    spawn_pos_x = LaunchConfiguration(
-        "spawn_pos_x"
-    ).perform(context)
+    spawn_pos_x = LaunchConfiguration('spawn_pos_x').perform(context)
 
-    spawn_pos_y = LaunchConfiguration(
-        "spawn_pos_y"
-    ).perform(context)
+    spawn_pos_y = LaunchConfiguration('spawn_pos_y').perform(context)
 
-    spawn_pos_z = LaunchConfiguration(
-        "spawn_pos_z"
-    ).perform(context)
+    spawn_pos_z = LaunchConfiguration('spawn_pos_z').perform(context)
 
-    px4_binary = (
-        px4_autopilot_path
-        / "build"
-        / "px4_sitl_default"
-        / "bin"
-        / "px4"
-    )
+    px4_binary = px4_autopilot_path / 'build' / 'px4_sitl_default' / 'bin' / 'px4'
 
     if not px4_binary.is_file():
-        raise RuntimeError(
-            f"PX4 SITL binary does not exist: {px4_binary}"
-        )
+        raise RuntimeError(f'PX4 SITL binary does not exist: {px4_binary}')
 
     #
     # PX4 expects the Gazebo simulation model name
@@ -74,77 +44,57 @@ def _create_px4_vehicle_actions(context):
     # x500                  -> gz_x500
     # x500_mono_cam_down    -> gz_x500_mono_cam_down
     #
-    px4_sim_model = f"gz_{model}"
+    px4_sim_model = f'gz_{model}'
 
     #
     # PX4 will spawn the model itself into the
     # already-running Gazebo world.
     #
-    spawn_pose = (
-        f"{spawn_pos_x},"
-        f"{spawn_pos_y},"
-        f"{spawn_pos_z},"
-        "0,0,0"
-    )
+    spawn_pose = f'{spawn_pos_x},{spawn_pos_y},{spawn_pos_z},0,0,0'
 
     px4_process = ExecuteProcess(
-        name=f"px4_{px4_instance}",
+        name=f'px4_{px4_instance}',
         cmd=[
             str(px4_binary),
-            "-i",
+            '-i',
             str(px4_instance),
         ],
         cwd=str(px4_autopilot_path),
-        output="screen",
+        output='screen',
         emulate_tty=True,
         additional_env={
             #
             # Gazebo is already owned by gz_world.launch.py.
             #
-            "PX4_GZ_STANDALONE":
-                "1",
-
+            'PX4_GZ_STANDALONE': '1',
             #
             # Tell PX4 which Gazebo model to spawn.
             #
-            "PX4_SIM_MODEL":
-                px4_sim_model,
-
+            'PX4_SIM_MODEL': px4_sim_model,
             #
             # Existing Gazebo world.
             #
-            "PX4_GZ_WORLD":
-                world,
-
+            'PX4_GZ_WORLD': world,
             #
             # PX4 airframe configuration.
             #
-            "PX4_SYS_AUTOSTART":
-                px4_autostart_id,
-
+            'PX4_SYS_AUTOSTART': px4_autostart_id,
             #
             # Spawn location.
             #
-            "PX4_GZ_MODEL_POSE":
-                spawn_pose,
-
+            'PX4_GZ_MODEL_POSE': spawn_pose,
             #
             # ROS 2 / DDS namespace.
             #
-            "PX4_UXRCE_DDS_NS":
-                px4_ns,
-
+            'PX4_UXRCE_DDS_NS': px4_ns,
             #
             # Micro XRCE-DDS Agent port.
             #
-            "PX4_UXRCE_DDS_PORT":
-                xrce_agent_port,
-
+            'PX4_UXRCE_DDS_PORT': xrce_agent_port,
             #
             # Gazebo transport.
             #
-            "GZ_IP":
-                "127.0.0.1",
+            'GZ_IP': '127.0.0.1',
         },
     )
 
@@ -157,56 +107,44 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "px4_autopilot_path",
+                'px4_autopilot_path',
             ),
-
             DeclareLaunchArgument(
-                "px4_instance",
-                default_value="0",
+                'px4_instance',
+                default_value='0',
             ),
-
             DeclareLaunchArgument(
-                "px4_ns",
-                default_value="px4_0",
+                'px4_ns',
+                default_value='px4_0',
             ),
-
             DeclareLaunchArgument(
-                "world",
-                default_value="default",
+                'world',
+                default_value='default',
             ),
-
             DeclareLaunchArgument(
-                "model",
-                default_value="x500",
+                'model',
+                default_value='x500',
             ),
-
             DeclareLaunchArgument(
-                "px4_autostart_id",
-                default_value="4001",
+                'px4_autostart_id',
+                default_value='4001',
             ),
-
             DeclareLaunchArgument(
-                "xrce_agent_port",
-                default_value="8888",
+                'xrce_agent_port',
+                default_value='8888',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_x",
-                default_value="0.0",
+                'spawn_pos_x',
+                default_value='0.0',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_y",
-                default_value="0.0",
+                'spawn_pos_y',
+                default_value='0.0',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_z",
-                default_value="0.0",
+                'spawn_pos_z',
+                default_value='0.0',
             ),
-
-            OpaqueFunction(
-                function=_create_px4_vehicle_actions
-            ),
+            OpaqueFunction(function=_create_px4_vehicle_actions),
         ]
     )

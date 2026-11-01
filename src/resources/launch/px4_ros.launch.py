@@ -10,36 +10,26 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "xrce_agent_executable",
-                default_value="MicroXRCEAgent",
-                description=(
-                    "apt install Micro XRCE-DDS Agent"
-                    "snap install micro-xrce-dds-agent"
-                ),
+                'xrce_agent_executable',
+                default_value='MicroXRCEAgent',
+                description=('apt install Micro XRCE-DDS Agentsnap install micro-xrce-dds-agent'),
             ),
-
             DeclareLaunchArgument(
-                "xrce_agent_port",
-                default_value="8888",
-                description=(
-                    "UDP port used by the "
-                    "Micro XRCE-DDS Agent"
-                ),
+                'xrce_agent_port',
+                default_value='8888',
+                description=('UDP port used by the Micro XRCE-DDS Agent'),
             ),
-
             ExecuteProcess(
                 cmd=[
-                    LaunchConfiguration("xrce_agent_executable"),
-                    "udp4",
-                    "--port",
-                    LaunchConfiguration(
-                        "xrce_agent_port"
-                    ),
-                    "-v",
-                    "1",
+                    LaunchConfiguration('xrce_agent_executable'),
+                    'udp4',
+                    '--port',
+                    LaunchConfiguration('xrce_agent_port'),
+                    '-v',
+                    '1',
                 ],
-                name="microxrce_agent",
-                output="screen",
+                name='microxrce_agent',
+                output='screen',
             ),
         ]
     )

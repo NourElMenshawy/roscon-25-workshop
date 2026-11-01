@@ -15,63 +15,32 @@ from launch_ros.actions import Node
 
 
 def _create_ros_vehicle_actions(context):
-    resource_package = LaunchConfiguration(
-        "resource_package"
-    ).perform(context)
+    resource_package = LaunchConfiguration('resource_package').perform(context)
 
-    urdf_model = LaunchConfiguration(
-        "urdf_model"
-    ).perform(context)
+    urdf_model = LaunchConfiguration('urdf_model').perform(context)
 
-    namespace = LaunchConfiguration(
-        "namespace"
-    ).perform(context)
+    namespace = LaunchConfiguration('namespace').perform(context)
 
-    tf_prefix = LaunchConfiguration(
-        "tf_prefix"
-    ).perform(context)
+    tf_prefix = LaunchConfiguration('tf_prefix').perform(context)
 
-    gz_entity_name = LaunchConfiguration(
-        "gz_entity_name"
-    ).perform(context)
+    gz_entity_name = LaunchConfiguration('gz_entity_name').perform(context)
 
-    spawn_pos_x = LaunchConfiguration(
-        "spawn_pos_x"
-    ).perform(context)
+    spawn_pos_x = LaunchConfiguration('spawn_pos_x').perform(context)
 
-    spawn_pos_y = LaunchConfiguration(
-        "spawn_pos_y"
-    ).perform(context)
+    spawn_pos_y = LaunchConfiguration('spawn_pos_y').perform(context)
 
-    spawn_pos_z = LaunchConfiguration(
-        "spawn_pos_z"
-    ).perform(context)
+    spawn_pos_z = LaunchConfiguration('spawn_pos_z').perform(context)
 
-    package_share = Path(
-        get_package_share_directory(
-            resource_package
-        )
-    )
+    package_share = Path(get_package_share_directory(resource_package))
 
-    urdf_path = (
-        package_share
-        / "urdf"
-        / f"{urdf_model}.urdf"
-    )
+    urdf_path = package_share / 'urdf' / f'{urdf_model}.urdf'
 
     if not urdf_path.is_file():
-        raise RuntimeError(
-            f"URDF does not exist: "
-            f"{urdf_path}"
-        )
+        raise RuntimeError(f'URDF does not exist: {urdf_path}')
 
-    robot_description = urdf_path.read_text(
-        encoding="utf-8"
-    )
+    robot_description = urdf_path.read_text(encoding='utf-8')
 
-    camera_sensor_frame = (
-        f"{gz_entity_name}/camera_link/imager"
-    )
+    camera_sensor_frame = f'{gz_entity_name}/camera_link/imager'
 
     actions = []
 
@@ -87,21 +56,16 @@ def _create_ros_vehicle_actions(context):
 
     actions.append(
         Node(
-            package="robot_state_publisher",
-            executable="robot_state_publisher",
+            package='robot_state_publisher',
+            executable='robot_state_publisher',
             namespace=namespace,
-            name="robot_state_publisher",
-            output="screen",
+            name='robot_state_publisher',
+            output='screen',
             parameters=[
                 {
-                    "robot_description":
-                        robot_description,
-
-                    "frame_prefix":
-                        tf_prefix,
-
-                    "use_sim_time":
-                        True,
+                    'robot_description': robot_description,
+                    'frame_prefix': tf_prefix,
+                    'use_sim_time': True,
                 }
             ],
         )
@@ -121,18 +85,15 @@ def _create_ros_vehicle_actions(context):
 
     actions.append(
         Node(
-            package="px4_tf",
-            executable="px4_tf_publisher",
+            package='px4_tf',
+            executable='px4_tf_publisher',
             namespace=namespace,
-            name="px4_tf_publisher",
-            output="screen",
+            name='px4_tf_publisher',
+            output='screen',
             parameters=[
                 {
-                    "px4_tf_prefix":
-                        tf_prefix,
-
-                    "use_sim_time":
-                        True,
+                    'px4_tf_prefix': tf_prefix,
+                    'use_sim_time': True,
                 }
             ],
         )
@@ -151,40 +112,32 @@ def _create_ros_vehicle_actions(context):
 
     actions.append(
         Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
+            package='tf2_ros',
+            executable='static_transform_publisher',
             namespace=namespace,
-            name="map_to_odom",
-            output="screen",
+            name='map_to_odom',
+            output='screen',
             arguments=[
-                "--x",
+                '--x',
                 spawn_pos_x,
-
-                "--y",
+                '--y',
                 spawn_pos_y,
-
-                "--z",
+                '--z',
                 spawn_pos_z,
-
-                "--roll",
-                "0.0",
-
-                "--pitch",
-                "0.0",
-
-                "--yaw",
-                "0.0",
-
-                "--frame-id",
-                "map",
-
-                "--child-frame-id",
-                f"{tf_prefix}odom",
+                '--roll',
+                '0.0',
+                '--pitch',
+                '0.0',
+                '--yaw',
+                '0.0',
+                '--frame-id',
+                'map',
+                '--child-frame-id',
+                f'{tf_prefix}odom',
             ],
             parameters=[
                 {
-                    "use_sim_time":
-                        True,
+                    'use_sim_time': True,
                 }
             ],
         )
@@ -203,51 +156,35 @@ def _create_ros_vehicle_actions(context):
 
     actions.append(
         Node(
-            package="tf2_ros",
-            executable="static_transform_publisher",
+            package='tf2_ros',
+            executable='static_transform_publisher',
             namespace=namespace,
-            name="camera_sensor_tf",
-            output="screen",
-
-            condition=IfCondition(
-                LaunchConfiguration(
-                    "has_downward_camera"
-                )
-            ),
-
+            name='camera_sensor_tf',
+            output='screen',
+            condition=IfCondition(LaunchConfiguration('has_downward_camera')),
             arguments=[
-                "--x",
-                "0.0",
-
-                "--y",
-                "0.0",
-
-                "--z",
-                "0.0",
-
-                "--qx",
-                "-0.7071068",
-
-                "--qy",
-                "0.7071068",
-
-                "--qz",
-                "0.0",
-
-                "--qw",
-                "0.0",
-
-                "--frame-id",
-                f"{tf_prefix}base_link",
-
-                "--child-frame-id",
+                '--x',
+                '0.0',
+                '--y',
+                '0.0',
+                '--z',
+                '0.0',
+                '--qx',
+                '-0.7071068',
+                '--qy',
+                '0.7071068',
+                '--qz',
+                '0.0',
+                '--qw',
+                '0.0',
+                '--frame-id',
+                f'{tf_prefix}base_link',
+                '--child-frame-id',
                 camera_sensor_frame,
             ],
-
             parameters=[
                 {
-                    "use_sim_time":
-                        True,
+                    'use_sim_time': True,
                 }
             ],
         )
@@ -260,52 +197,41 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "resource_package",
-                default_value="resources",
+                'resource_package',
+                default_value='resources',
             ),
-
             DeclareLaunchArgument(
-                "urdf_model",
-                default_value="x500",
+                'urdf_model',
+                default_value='x500',
             ),
-
             DeclareLaunchArgument(
-                "namespace",
-                default_value="px4_0",
+                'namespace',
+                default_value='px4_0',
             ),
-
             DeclareLaunchArgument(
-                "tf_prefix",
-                default_value="px4_0/",
+                'tf_prefix',
+                default_value='px4_0/',
             ),
-
             DeclareLaunchArgument(
-                "gz_entity_name",
-                default_value="x500_0",
+                'gz_entity_name',
+                default_value='x500_0',
             ),
-
             DeclareLaunchArgument(
-                "has_downward_camera",
-                default_value="false",
+                'has_downward_camera',
+                default_value='false',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_x",
-                default_value="0.0",
+                'spawn_pos_x',
+                default_value='0.0',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_y",
-                default_value="0.0",
+                'spawn_pos_y',
+                default_value='0.0',
             ),
-
             DeclareLaunchArgument(
-                "spawn_pos_z",
-                default_value="0.0",
+                'spawn_pos_z',
+                default_value='0.0',
             ),
-
-            OpaqueFunction(
-                function=_create_ros_vehicle_actions
-            ),
+            OpaqueFunction(function=_create_ros_vehicle_actions),
         ]
     )

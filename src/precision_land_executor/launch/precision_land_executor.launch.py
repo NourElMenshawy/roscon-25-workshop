@@ -10,32 +10,30 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument(
-                "processing_mode",
-                default_value="stdexec",
-                description="Processing mode: sync or stdexec",
+                'processing_mode',
+                default_value='stdexec',
+                description='Processing mode: sync or stdexec',
             ),
-
             DeclareLaunchArgument(
-                "processing_delay_ms",
-                default_value="0",
-                description="Artificial processing delay in milliseconds",
+                'processing_delay_ms',
+                default_value='0',
+                description='Artificial processing delay in milliseconds',
             ),
-
             Node(
-                package="precision_land_executor",
-                executable="precision_land_executor",
-                name="precision_land_executor",
-                namespace="px4_0",
-                output="screen",
+                package='precision_land_executor',
+                executable='precision_land_executor',
+                name='precision_land_executor',
+                namespace='px4_0',
+                output='screen',
                 parameters=[
                     {
-                        "use_sim_time": True,
-                        "processing_mode": ParameterValue(
-                            LaunchConfiguration("processing_mode"),
+                        'use_sim_time': True,
+                        'processing_mode': ParameterValue(
+                            LaunchConfiguration('processing_mode'),
                             value_type=str,
                         ),
-                        "processing_delay_ms": ParameterValue(
-                            LaunchConfiguration("processing_delay_ms"),
+                        'processing_delay_ms': ParameterValue(
+                            LaunchConfiguration('processing_delay_ms'),
                             value_type=int,
                         ),
                     }
@@ -43,4 +41,3 @@ def generate_launch_description():
             ),
         ]
     )
-
