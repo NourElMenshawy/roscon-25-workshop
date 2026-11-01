@@ -1,11 +1,14 @@
 #pragma once
 
-#include <chrono>
-#include <cstdint>
-#include <geometry_msgs/msg/pose_stamped.hpp>
+#include "CustomMode_v2.hpp"
+#include "precision_land_executor/follower_strategy_selector.hpp"
+#include "precision_land_executor/shared_landing_site.hpp"
+#include "precision_land_executor/tf_site_resolver.hpp"
+
 #include <landing_coordinator/msg/landing_status.hpp>
+#include <landing_coordinator/msg/landing_site_map.hpp>
 #include <landing_coordinator/srv/report_landing_complete.hpp>
-#include <optional>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include <px4_msgs/msg/vehicle_command.hpp>
 #include <px4_msgs/msg/vehicle_command_ack.hpp>
 #include <px4_msgs/msg/vehicle_land_detected.hpp>
@@ -13,21 +16,27 @@
 #include <px4_ros2/components/mode_executor.hpp>
 #include <px4_ros2/components/node_with_mode.hpp>
 #include <rclcpp/rclcpp.hpp>
+#include <tf2_ros/buffer.hpp>
+#include <tf2_ros/transform_listener.hpp>
 #include <std_msgs/msg/string.hpp>
+
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 
-#include "CustomMode_v2.hpp"
-#include "precision_land_executor/follower_strategy_selector.hpp"
-
 class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
- public:
-  CustomModeExecutor(px4_ros2::ModeBase& owned_mode, px4_ros2::ModeBase& second_mode);
+public:
+  CustomModeExecutor(px4_ros2::ModeBase& owned_mode,
+                     px4_ros2::ModeBase& second_mode);
 
   void onActivate() override;
   void onDeactivate(DeactivateReason reason) override;
 
- private:
+private:
   using LandingStatus = landing_coordinator::msg::LandingStatus;
+  using LandingSiteMap = landing_coordinator::msg::LandingSiteMap;
   using ReportLandingComplete = landing_coordinator::srv::ReportLandingComplete;
   using VehicleLandDetected = px4_msgs::msg::VehicleLandDetected;
   using VehicleStatus = px4_msgs::msg::VehicleStatus;
@@ -39,6 +48,7 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   enum class State { Idle, PrecisionLand, WaitUntilDisarmed };
 
   void onLandingStatus(LandingStatus::ConstSharedPtr status);
+  void onLandingSites(LandingSiteMap::ConstSharedPtr sites);
   void onTargetPose(PoseStamped::ConstSharedPtr observation);
   void onVehicleCommandAck(VehicleCommandAck::ConstSharedPtr ack);
   void onVehicleLandDetected(VehicleLandDetected::ConstSharedPtr event);
@@ -47,7 +57,9 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   void onCompletionResponse(rclcpp::Client<ReportLandingComplete>::SharedFuture future);
   void tryActivatePrimary();
   void startFollowerSelection();
+  void maybeStartFollowerSelection();
   void pollFollowerSelection();
+  precision_land_executor::SiteEvaluation evaluateFollowerSites();
   void switchToState(State state, px4_ros2::Result previous_result);
 
   px4_ros2::ModeBase& _second_mode;
@@ -80,8 +92,17 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   int _completion_response_timeout_ms{3000};
   State _state{State::Idle};
   std::optional<Clock::time_point> _last_valid_target;
+  std::optional<Clock::time_point> _completion_seen_at;
+  bool _follower_selection_started{false};
+  bool _tf_lookup_pending{false};
+  std::optional<Clock::time_point> _last_tf_retry;
+  std::optional<precision_land_executor::SiteCatalog> _site_catalog;
+  std::string _site_frame_id;
+  std::string _local_frame_id;
+  double _site_separation_margin_m{2.0};
 
   rclcpp::Subscription<LandingStatus>::SharedPtr _status_sub;
+  rclcpp::Subscription<LandingSiteMap>::SharedPtr _sites_sub;
   rclcpp::Subscription<PoseStamped>::SharedPtr _target_sub;
   rclcpp::Subscription<VehicleCommandAck>::SharedPtr _command_ack_sub;
   rclcpp::Publisher<VehicleCommand>::SharedPtr _command_pub;
@@ -91,4 +112,6 @@ class CustomModeExecutor : public px4_ros2::ModeExecutorBase {
   rclcpp::TimerBase::SharedPtr _activation_timer;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr _strategy_pub;
   precision_land_executor::FollowerStrategySelector _follower_selector;
+  std::shared_ptr<tf2_ros::Buffer> _tf_buffer;
+  std::shared_ptr<tf2_ros::TransformListener> _tf_listener;
 };

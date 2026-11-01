@@ -21,6 +21,7 @@ find_package(Eigen3 REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 find_package(landing_coordinator REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(Threads REQUIRED)
@@ -93,6 +94,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
   follower_strategy_selector
   tf2_ros::tf2_ros
   tf2::tf2
+  tf2_geometry_msgs::tf2_geometry_msgs
   stdexec_headers
 )
 
@@ -134,6 +136,20 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_landing_strategy test/test_landing_strategy.cpp)
   target_include_directories(test_landing_strategy PRIVATE include)
+
+  ament_add_gtest(test_shared_landing_site
+    test/test_shared_landing_site.cpp)
+  target_include_directories(test_shared_landing_site PRIVATE include)
+
+  ament_add_gtest(test_tf_landing_site test/test_tf_landing_site.cpp)
+  target_include_directories(test_tf_landing_site PRIVATE include)
+  target_link_libraries(test_tf_landing_site
+    rclcpp::rclcpp
+    tf2_ros::tf2_ros
+    tf2::tf2
+    ${geometry_msgs_TARGETS}
+    tf2_geometry_msgs::tf2_geometry_msgs
+  )
 
   ament_add_gtest(test_follower_strategy_selector
     test/test_follower_strategy_selector.cpp)

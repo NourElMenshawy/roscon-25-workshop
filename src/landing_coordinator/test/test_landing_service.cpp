@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "landing_coordinator/landing_coordinator.hpp"
+#include "landing_coordinator/msg/landing_site_map.hpp"
 #include "landing_coordinator/msg/landing_status.hpp"
 #include "landing_coordinator/srv/request_landing.hpp"
 
@@ -241,6 +242,32 @@ TEST_F(LandingServiceTest, CompletionServicePublishesAndRetainsCompletedStatus)
   ASSERT_NE(again, nullptr);
   EXPECT_TRUE(again->accepted);
   EXPECT_EQ(again->reason, "already_completed");
+
+  // Completion also retains a single, mission-scoped site catalogue. The
+  // default geometry is NOT marked verified, preventing an accidental second
+  // landing on unexamined Gazebo coordinates.
+  using SiteMap = landing_coordinator::msg::LandingSiteMap;
+  std::mutex sites_mutex;
+  std::condition_variable sites_condition;
+  bool received_sites = false;
+  auto sites_sub = client_node_->create_subscription<SiteMap>(
+      "/landing_coordinator/landing_sites", rclcpp::QoS(1).reliable().transient_local(),
+      [&](SiteMap::ConstSharedPtr msg) {
+        if (msg->mission_id == first->mission_id && msg->owner_id == "drone_a" &&
+            msg->frame_id == "map" && msg->sites.size() == 2 && msg->sites[0].occupied &&
+            !msg->sites[1].occupied && !msg->sites[0].verified && !msg->sites[1].verified) {
+          {
+            std::lock_guard<std::mutex> guard(sites_mutex);
+            received_sites = true;
+          }
+          sites_condition.notify_all();
+        }
+      });
+  {
+    std::unique_lock<std::mutex> site_lock(sites_mutex);
+    EXPECT_TRUE(sites_condition.wait_for(site_lock, 4s, [&] { return received_sites; }));
+  }
+  (void)sites_sub;
 
   // Late-joining subscriptions receive the last status, not RESERVED.
   std::mutex mutex;

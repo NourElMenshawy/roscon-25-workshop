@@ -15,6 +15,7 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -26,6 +27,9 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/RequestLanding.srv"
   "srv/ReportLandingComplete.srv"
   "msg/LandingStatus.msg"
+  "msg/LandingSite.msg"
+  "msg/LandingSiteMap.msg"
+  DEPENDENCIES geometry_msgs
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target

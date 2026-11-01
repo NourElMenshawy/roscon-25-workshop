@@ -2,13 +2,14 @@
 <package format="3">
   <name>landing_coordinator</name>
   <version>0.1.0</version>
-  <description>Exclusive landing arbitration with authoritative mission status for the PX4/ROS 2 two-drone demo.</description>
+  <description>First-wins exclusive landing arbitration for the PX4/ROS 2 two-drone demo.</description>
   <maintainer email="maintainer@example.com">Robotics Demo Maintainer</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <build_depend>rosidl_default_generators</build_depend>
   <depend>rclcpp</depend>
+  <depend>geometry_msgs</depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
